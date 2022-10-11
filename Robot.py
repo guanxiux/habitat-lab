@@ -1,12 +1,15 @@
+# !/usr/bin/python3
+import cv2
+import numpy as np
+import time
+import rospy
+from tf.transformations import quaternion_from_euler
+import quaternion
+
 import habitat
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
-import cv2
-from typing import MutableMapping
-import numpy as np
-import quaternion
-quaternion.from_euler_angles
-from tf.transformations import quaternion_from_euler, euler_from_quaternion, _AXES2TUPLE
 from habitat.utils.geometry_utils import quaternion_to_list
+from geometry_msgs.msg import Twist
 FORWARD_KEY="w"
 LEFT_KEY="a"
 RIGHT_KEY="d"
@@ -67,20 +70,17 @@ def example():
             continue
         if chr(keystroke) in agent_1:
             action = {0: action}
+            # action = {0: HabitatSimActions.VELOCITY_CONTROL, }
         else:
             action = {1: action}
         observations = env.step(action)
+        env.set_agent_action_spec(1, HabitatSimActions.MOVE_FORWARD, 0.01)
         other_obs = env.get_observation_of(1)[1]
         count_steps += 1
 
         print("Destination, distance: {:3f}, theta(radians): {:.2f}".format(
             observations["pointgoal_with_gps_compass"][0],
             observations["pointgoal_with_gps_compass"][1]))
-        print(f"State: Agent0 pos {env.get_state_of(0).position}")
-        rot = env.get_state_of(0).rotation
-        rot = rot[1:] + [rot[0]]
-        print(f'rot {quaternion_from_euler(*rot)}')
-            
         all_obs = np.concatenate((observations["rgb"], other_obs["rgb"]), axis=0)
         cv2.imshow("RGB", transform_rgb_bgr(all_obs))
 
@@ -93,7 +93,54 @@ def example():
         print("you successfully navigated to destination point")
     else:
         print("your navigation was unsuccessful")
+    
+def trans_habitat_to_ros(trans):
+    '''
+    The forward direction in habitat is z
+    '''
+    return [trans[2], trans[0], trans[1]]
 
+def trans_ros_to_habitat(trans):
+    return [trans[1], trans[2], trans[0]]
+
+def rot_habitat_to_ros(rot):
+    ''' The fucking quaternion package has a quaternion order of w, x, y, z, 
+        while others' are x,y,z,w
+    '''
+    assert isinstance(rot, quaternion.quaternion)
+    return quaternion_to_list(rot)
+
+def rot_ros_to_habitat(rot):
+    _rot = [rot[3]] + rot[:3]
+    return quaternion.as_quat_array(_rot)
+
+class Robot:
+    def __init__(self, env:habitat.Env, agent_name, idx, ns,  x=0, y=0, w=0, action_freq=10, required_freq=1) -> None:
+        # x, y, w: initial translation and yaw
+        self.idx = idx
+        self.ns = ns
+        self.init_trans = [x, y, 0.]
+        self.init_quat = quaternion_from_euler(0, 0, w)
+        self.env = env
+        getattr(env._config.SIMULATOR, agent_name)['start_position'] = trans_ros_to_habitat(self.init_trans)
+        getattr(env._config.SIMULATOR, agent_name)['start_rotation'] = rot_ros_to_habitat(self.init_quat)
+        self.action_freq = action_freq
+        self.vel_cmd_sub = rospy.Subscriber("cmd_vel",  Twist, self.sub_vel, queue_size=1)
+        rospy.Timer(1/action_freq, self.action_executor)
+        self.vel = None
+        self.required_freq = required_freq
+        self.t_last_cmd_vel = -1
+
+    def sub_vel(self, cmd_vel: Twist):
+        self.vel = cmd_vel
+        self.t_last_cmd_vel = time.time()
+    
+    def action_executor(self):
+        if time.time() - self.t_last_cmd_vel > 1 / self.required_freq:
+            return
+        
+
+        
 
 if __name__ == "__main__":
     example()

@@ -504,6 +504,13 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
         else:
             raise NotImplementedError()
 
+    def set_agent_action_spec(self, agent_id: int, action_name: int, spec: habitat_sim.ActuationSpec) -> None:
+        r""""
+        Set spec of a specific action on an agent
+        """
+        agent = self.get_agent(agent_id)
+        agent.agent_config.action_space[action_name].actuation = spec
+
     def render(self, mode: str = "rgb", agent_id=0) -> Any:
         r"""
         Args:

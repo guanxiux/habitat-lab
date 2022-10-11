@@ -323,12 +323,6 @@ class EmbodiedTask:
         actions: Dict[int, Any],
     ):
         assert isinstance(actions, MutableMapping)
-        for action_name in actions["action"].values():
-            if isinstance(action_name, (int, np.integer)):
-                action_name = self.get_action_name(action_name)
-            assert (
-                action_name in self.actions
-            ), f"Can't find '{action_name}' action in {self.actions.keys()}."
         obs = self._sim.step(actions["action"])
         observations.update(obs)
 

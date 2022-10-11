@@ -228,6 +228,12 @@ class Env:
     def get_observation_of(self, agent_id: Union[int, List]):
         return self._sim.get_observations_of(agent_id)
 
+    def set_agent_action_spec(self, agent_id: int, action_name: int, spec) -> None:
+        r""""
+        Set spec of a specific action on an agent
+        """
+        self._sim.set_agent_action_spec(agent_id, action_name, spec)
+
     def get_state_of(self, agent_id: int):
         return self._sim.get_agent_state(agent_id)
 
