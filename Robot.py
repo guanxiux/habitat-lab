@@ -8,7 +8,6 @@ import quaternion
 
 import habitat
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
-from habitat.utils.geometry_utils import quaternion_to_list
 from geometry_msgs.msg import Twist
 FORWARD_KEY="w"
 LEFT_KEY="a"
@@ -93,26 +92,7 @@ def example():
         print("you successfully navigated to destination point")
     else:
         print("your navigation was unsuccessful")
-    
-def trans_habitat_to_ros(trans):
-    '''
-    The forward direction in habitat is z
-    '''
-    return [trans[2], trans[0], trans[1]]
 
-def trans_ros_to_habitat(trans):
-    return [trans[1], trans[2], trans[0]]
-
-def rot_habitat_to_ros(rot):
-    ''' The fucking quaternion package has a quaternion order of w, x, y, z, 
-        while others' are x,y,z,w
-    '''
-    assert isinstance(rot, quaternion.quaternion)
-    return quaternion_to_list(rot)
-
-def rot_ros_to_habitat(rot):
-    _rot = [rot[3]] + rot[:3]
-    return quaternion.as_quat_array(_rot)
 
 class Robot:
     def __init__(self, env:habitat.Env, agent_name, idx, ns,  x=0, y=0, w=0, action_freq=10, required_freq=1) -> None:
@@ -122,22 +102,27 @@ class Robot:
         self.init_trans = [x, y, 0.]
         self.init_quat = quaternion_from_euler(0, 0, w)
         self.env = env
-        getattr(env._config.SIMULATOR, agent_name)['start_position'] = trans_ros_to_habitat(self.init_trans)
-        getattr(env._config.SIMULATOR, agent_name)['start_rotation'] = rot_ros_to_habitat(self.init_quat)
         self.action_freq = action_freq
         self.vel_cmd_sub = rospy.Subscriber("cmd_vel",  Twist, self.sub_vel, queue_size=1)
         rospy.Timer(1/action_freq, self.action_executor)
         self.vel = None
+        self.move = None
         self.required_freq = required_freq
         self.t_last_cmd_vel = -1
 
     def sub_vel(self, cmd_vel: Twist):
         self.vel = cmd_vel
+        linear_frac = [l / self.action_freq for l in cmd_vel.linear]
+        angular_frac = [a /self.action_freq for a in cmd_vel.angular]
+        self.move_frac = Twist(linear_frac, angular_frac)
+        
         self.t_last_cmd_vel = time.time()
     
     def action_executor(self):
+        # Last command received has expired
         if time.time() - self.t_last_cmd_vel > 1 / self.required_freq:
             return
+        
         
 
         

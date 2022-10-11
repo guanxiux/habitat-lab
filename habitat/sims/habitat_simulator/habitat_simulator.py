@@ -532,6 +532,9 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
 
         return output
 
+    def update_agent_state(self):
+        self._update_agents_state()
+
     def reconfigure(
         self, habitat_config: Config, should_close_on_new_scene: bool = True
     ) -> None:

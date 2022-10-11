@@ -71,9 +71,9 @@ class Env:
             "Freeze the config before creating the "
             "environment, use config.freeze()."
         )
-        self._config = config
-        self.num_agents = len(self._config.SIMULATOR.AGENTS)
-        self.default_agent_id = self._config.SIMULATOR.DEFAULT_AGENT_ID
+        self.config = config
+        self.num_agents = len(self.config.SIMULATOR.AGENTS)
+        self.default_agent_id = self.config.SIMULATOR.DEFAULT_AGENT_ID
         self.agent_ids = list(range(self.num_agents))
         self._dataset = dataset
         if self._dataset is None and config.DATASET.TYPE:
@@ -93,24 +93,24 @@ class Env:
             ), "dataset should have non-empty episodes list"
             self._setup_episode_iterator()
             self.current_episode = next(self.episode_iterator)
-            self._config.defrost()
-            self._config.SIMULATOR.SCENE_DATASET = (
+            self.config.defrost()
+            self.config.SIMULATOR.SCENE_DATASET = (
                 self.current_episode.scene_dataset_config
             )
-            self._config.SIMULATOR.SCENE = self.current_episode.scene_id
-            self._config.freeze()
+            self.config.SIMULATOR.SCENE = self.current_episode.scene_id
+            self.config.freeze()
 
             self.number_of_episodes = len(self.episodes)
         else:
             self.number_of_episodes = None
 
         self._sim = make_sim(
-            id_sim=self._config.SIMULATOR.TYPE, config=self._config.SIMULATOR
+            id_sim=self.config.SIMULATOR.TYPE, config=self.config.SIMULATOR
         )
 
         self._task = make_task(
-            self._config.TASK.TYPE,
-            config=self._config.TASK,
+            self.config.TASK.TYPE,
+            config=self.config.TASK,
             sim=self._sim,
             dataset=self._dataset,
         )
@@ -122,9 +122,9 @@ class Env:
         )
         self.action_space = self._task.action_space
         self._max_episode_seconds = (
-            self._config.ENVIRONMENT.MAX_EPISODE_SECONDS
+            self.config.ENVIRONMENT.MAX_EPISODE_SECONDS
         )
-        self._max_episode_steps = self._config.ENVIRONMENT.MAX_EPISODE_STEPS
+        self._max_episode_steps = self.config.ENVIRONMENT.MAX_EPISODE_STEPS
         self._elapsed_steps = 0
         self._episode_start_time: Optional[float] = None
         self._episode_over = False
@@ -133,9 +133,9 @@ class Env:
         assert self._dataset is not None
         iter_option_dict = {
             k.lower(): v
-            for k, v in self._config.ENVIRONMENT.ITERATOR_OPTIONS.items()
+            for k, v in self.config.ENVIRONMENT.ITERATOR_OPTIONS.items()
         }
-        iter_option_dict["seed"] = self._config.SEED
+        iter_option_dict["seed"] = self.config.SEED
         self._episode_iterator = self._dataset.get_episode_iterator(
             **iter_option_dict
         )
@@ -262,7 +262,7 @@ class Env:
         self._episode_force_changed = False
 
         assert self._current_episode is not None, "Reset requires an episode"
-        self.reconfigure(self._config)
+        self.reconfigure(self.config)
 
         observations = self.task.reset(episode=self.current_episode)
         self._task.measurements.reset_measures(
@@ -340,15 +340,18 @@ class Env:
         self._task.seed(seed)
 
     def reconfigure(self, config: Config) -> None:
-        self._config = config
+        self.config = config
 
-        self._config.defrost()
-        self._config.SIMULATOR = self._task.overwrite_sim_config(
-            self._config.SIMULATOR, self.current_episode
+        self.config.defrost()
+        self.config.SIMULATOR = self._task.overwrite_sim_config(
+            self.config.SIMULATOR, self.current_episode
         )
-        self._config.freeze()
+        self.config.freeze()
 
-        self._sim.reconfigure(self._config.SIMULATOR)
+        self._sim.reconfigure(self.config.SIMULATOR)
+
+    def update_state(self):
+        self._sim.update_agent_state()
 
     def render(self, mode="rgb") -> np.ndarray:
         return self._sim.render(mode)
