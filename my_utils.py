@@ -57,7 +57,7 @@ def quat_habitat_to_ros(quat):
     # left-handed coordinate to right-handed coordinate, not sure about correctness
     assert isinstance(quat, quaternion.quaternion)
     quat = quaternion_to_list(quat)
-    quat = [-quat[2], -quat[0], quat[1], quat[3]]
+    quat = np.array([-quat[2], -quat[0], quat[1], quat[3]])
     return quat
 
 def quat_ros_to_habitat(quat):
@@ -71,11 +71,11 @@ def euler_ros_to_habitat(euler):
     axis: sxyz in ROS to rzyz in habitat
     '''
     quat = quaternion_from_euler(*euler)
-    return euler_from_quaternion(quat, 'rzyz')
+    return np.array(euler_from_quaternion(quat, 'rzyz'))
 
 def euler_habitat_to_ros(euler):
     quat = quaternion_from_euler(*euler, 'rzyz')
-    return euler_from_quaternion(quat)
+    return np.array(euler_from_quaternion(quat))
 
 def set_initial_position(env: habitat.Env, agent_name, trans, rot):
     if len(rot) == 3:

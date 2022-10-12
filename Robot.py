@@ -11,6 +11,7 @@ import habitat
 from habitat.config import Config
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
 from geometry_msgs.msg import Twist, Pose, Point, Quaternion, TransformStamped, Transform, Vector3
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud2, PointField, JointState, LaserScan, Image, CameraInfo
 from tf import TransformBroadcaster
 
@@ -36,8 +37,11 @@ class MultiRobotEnv(habitat.Env):
         self.agent_ids = agent_ids
         self.multi_ns = multi_ns
         self.t_last_cmd_vel = [-1 * required_freq] * len(agent_ids)
+        self.last_position = [None] * len(agent_ids)
+        self.last_euler = [None] * len(agent_ids)
         assert sense_freq < action_freq
         self.action_freq = action_freq
+        self.sense_freq = sense_freq
         self.action_per_sen = int(action_freq/sense_freq)
         self.count = 0
         self.required_freq = required_freq
@@ -111,7 +115,7 @@ class MultiRobotEnv(habitat.Env):
         self.camera_info_pubs[agent_id].publish(camera_info)
 
         # Publish ground truth tf of each robot
-        trans, quat, _ = get_agent_position(self, agent_id)
+        trans, quat, euler = get_agent_position(self, agent_id)
         transform = TransformStamped()
         transform.header.frame_id = "map"
         transform.header.stamp = current_time
@@ -119,6 +123,25 @@ class MultiRobotEnv(habitat.Env):
         transform.transform = Transform(
             translation=Vector3(*trans), rotation=Quaternion(*quat))
         self.gt_tf_pub.sendTransformMessage(transform)
+        
+        if self.last_position[agent_id] is not None:
+            odom = Odometry()
+            odom.header.stamp = current_time
+            odom.header.frame_id = "map"
+            odom.child_frame_id = ns
+
+            # set the position
+            odom.pose.pose = Pose(Point(*trans), Quaternion(*quat))
+
+            # set the velocity
+            v_trans = (trans - self.last_position[agent_id])*self.sense_freq
+            v_rot = (euler - self.last_euler[agent_id]) * self.sense_freq
+            odom.twist.twist = Twist(Vector3(*v_trans), Vector3(*v_rot))
+
+            # publish the message
+            self.odom_pub.publish(odom)
+        self.last_position[agent_id] = trans
+        self.last_euler[agent_id] = euler
 
 class Robot:
     def __init__(self, env:MultiRobotEnv, agent_name,

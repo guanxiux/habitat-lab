@@ -2,25 +2,25 @@ ENVIRONMENT:
     # Endless episode
     MAX_EPISODE_STEPS: 0
 SIMULATOR:
-  Robot0:
+  robot0:
     HEIGHT: 1.5
     RADIUS: 0.1
     SENSORS: ["RGB_SENSOR", 'DEPTH_SENSOR']
     IS_SET_START_STATE: True
     INIT_POSE: [4., 0., 0.] # [x, y, yaw]
-  Robot1:
+  robot1:
     HEIGHT: 1.5
     RADIUS: 0.1
     SENSORS: ["RGB_SENSOR", 'DEPTH_SENSOR']
     IS_SET_START_STATE: True
     INIT_POSE: [4., 2., 0.] # [x, y, yaw]
-  Robot2:
+  robot2:
     HEIGHT: 1.5
     RADIUS: 0.1
     SENSORS: ["RGB_SENSOR", 'DEPTH_SENSOR']
     IS_SET_START_STATE: True
     INIT_POSE: [4., -2., 0.] # [x, y, yaw]
-  AGENTS: ['Robot0', 'Robot1', 'Robot2']
+  AGENTS: ['robot0', 'robot1', 'robot2']
   HABITAT_SIM_V0:
     GPU_DEVICE_ID: 0
   RGB_SENSOR:
