@@ -495,7 +495,7 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
         sim_obs = self.get_sensor_observations(agent_ids=agent_id)
         if isinstance(agent_id, int):
             obs = self._agent_config[agent_id].sensor_suite.get_observations(sim_obs)
-            return {agent_id: obs}
+            return obs
         elif isinstance(agent_id, list):
             obs = {}
             for i in agent_id:
