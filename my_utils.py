@@ -45,22 +45,26 @@ def trans_habitat_to_ros(trans):
     '''
     The forward direction in habitat is z
     '''
-    return np.array([trans[2], trans[0], trans[1]], dtype=np.float64)
+    return np.array([trans[2], trans[0], trans[1]], dtype=np.float64)*-1
 
 def trans_ros_to_habitat(trans):
-    return np.array([trans[1], trans[2], trans[0]], dtype=np.float64)
+    return np.array([trans[1], trans[2], trans[0]], dtype=np.float64)*-1
 
 def quat_habitat_to_ros(quat):
     ''' The fucking quaternion package has a quaternion order of w, x, y, z,
         while others' are x,y,z,w
     '''
+    # left-handed coordinate to right-handed coordinate, not sure about correctness
     assert isinstance(quat, quaternion.quaternion)
-    return quaternion_to_list(quat)
+    quat = quaternion_to_list(quat)
+    quat = [-quat[2], -quat[0], quat[1], quat[3]]
+    return quat
 
 def quat_ros_to_habitat(quat):
     quat = list(quat)
-    _quat = [quat[3]] + quat[:3]
-    return quaternion.as_quat_array(_quat)
+    quat = [quat[1], -quat[2], -quat[0], quat[3]]
+    quat = [quat[3]] + quat[:3]
+    return quaternion.as_quat_array(quat)
 
 def euler_ros_to_habitat(euler):
     '''
@@ -78,7 +82,7 @@ def set_initial_position(env: habitat.Env, agent_name, trans, rot):
         # Euler angle
         rot = euler_ros_to_habitat(rot)
         rot = quaternion_from_euler(*rot)
-    getattr(env.config.SIMULATOR, agent_name)['START_POSITION'] = trans_ros_to_habitat(trans)
+    getattr(env.config.SIMULATOR, agent_name)['START_POSITION'] = trans_ros_to_habitat(trans) * -1
     getattr(env.config.SIMULATOR, agent_name)['START_ROTATION'] = quat_ros_to_habitat(rot)
     env.update_state()
 
@@ -87,8 +91,6 @@ def get_agent_position(env: habitat.Env, agent_id: int=0):
     trans = state.position
     trans = trans_habitat_to_ros(trans)
     quat = quat_habitat_to_ros(state.rotation)
-    # left-handed coordinate to right-handed coordinate, not sure about correctness
-    quat = [-quat[0], -quat[2], -quat[1], quat[3]]
     euler = np.array(euler_from_quaternion(quat))
     return trans, quat, euler
 

@@ -131,9 +131,9 @@ class Robot:
         self.agent_id = agent_id
         self.action_id = action_id
         self.init_trans = [x, y, 0.]
-        self.init_quat = quaternion_from_euler(0, 0, w)
+        self.init_rot = [0, 0, w]
         self.action_freq = env.action_freq
-        set_initial_position(env, agent_name, self.init_trans, self.init_quat)
+        set_initial_position(env, agent_name, self.init_trans, self.init_rot)
         set_my_action_space(env, agent_id)
 
         # ROS config
