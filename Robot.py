@@ -9,7 +9,6 @@ from cv_bridge import CvBridge
 
 import habitat
 from habitat.config import Config
-from habitat.sims.habitat_simulator.actions import HabitatSimActions
 from geometry_msgs.msg import Twist, Pose, Point, Quaternion, TransformStamped, Transform, Vector3
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud2, PointField, JointState, LaserScan, Image, CameraInfo
@@ -23,6 +22,26 @@ from threading import Lock
 def transform_rgb_bgr(image):
     return image[:, :, [2, 1, 0]]
 
+
+br = TransformBroadcaster()
+
+def broadcast_tf(current_time, base, target, trans=None, rot=None):
+    if trans is None:
+        trans = [0., 0., 0.]
+    if rot is None:
+        quat = quaternion_from_euler(0, 0, 0)
+    elif len(rot) == 3:
+        quat = quaternion_from_euler(*rot)
+    else:
+        quat = rot
+    
+    transform = TransformStamped()
+    transform.header.frame_id = base
+    transform.header.stamp = current_time
+    transform.child_frame_id = target
+    transform.transform = Transform(
+        translation=Vector3(*trans), rotation=Quaternion(*quat))
+    br.sendTransformMessage(transform)
 
 class MultiRobotEnv(habitat.Env):
     '''
@@ -49,10 +68,10 @@ class MultiRobotEnv(habitat.Env):
         
         self.rate = rospy.Rate(action_freq)
         self.bridge = CvBridge()
-        self.depth_pubs = [rospy.Publisher(f"{ns}/depth", Image, queue_size=1) for ns in multi_ns]
+        self.depth_pubs = [rospy.Publisher(f"{ns}/camera/depth/image_raw", Image, queue_size=1) for ns in multi_ns]
         self.image_pubs = [rospy.Publisher(f"{ns}/image", Image, queue_size=1) for ns in multi_ns]
-        self.camera_info_pubs = [rospy.Publisher(f"{ns}/camera_info", CameraInfo,  queue_size=1) for ns in multi_ns]
-        self.gt_tf_pub = TransformBroadcaster()
+        self.camera_info_pubs = [rospy.Publisher(f"{ns}/camera/depth/camera_info", CameraInfo,  queue_size=1) for ns in multi_ns]
+        self.odom_pub = [rospy.Publisher(f"{ns}/odom", Odometry, queue_size=1) for ns in multi_ns]
 
         # rospy.Timer(1/action_freq, self.action_executor)
 
@@ -67,7 +86,7 @@ class MultiRobotEnv(habitat.Env):
             actions = {}
             current_time = time.time()
             for i in self.agent_ids:
-                if current_time - self.t_last_cmd_vel[i] > self.required_freq:
+                if current_time - self.t_last_cmd_vel[i] > 1 / self.required_freq:
                     continue
                 actions[i] = self.action_id
             if actions:
@@ -80,11 +99,40 @@ class MultiRobotEnv(habitat.Env):
                     self.publish_obs(i, obs[i], _current_time)
             self.count += 1
 
+    def make_depth_camera_info_msg(self, header, height, width):
+        r"""
+        Create camera info message for depth camera.
+        :param header: header to create the message
+        :param height: height of depth image
+        :param width: width of depth image
+        :returns: camera info message of type CameraInfo.
+        """
+        # code modifed upon work by Bruce Cui
+        camera_info_msg = CameraInfo()
+        camera_info_msg.header = header
+        fx, fy = width / 2, height / 2
+        cx, cy = width / 2, height / 2
+
+        camera_info_msg.width = width
+        camera_info_msg.height = height
+        camera_info_msg.distortion_model = "plumb_bob"
+        camera_info_msg.K = np.float32([fx, 0, cx, 0, fy, cy, 0, 0, 1])
+        camera_info_msg.D = np.float32([0, 0, 0, 0, 0])
+        camera_info_msg.P = [fx, 0, cx, 0, 0, fy, cy, 0, 0, 0, 1, 0]
+        return camera_info_msg
+
     def publish_obs(self, agent_id, obs: dict, current_time) -> None:
         ns = self.multi_ns[agent_id]
-        depth = np.array(obs['depth'] / 10 * 255).astype(np.uint16)
+        # shape = obs['depth'].shape
         image = np.array(obs['rgb'])
-        _depth = self.bridge.cv2_to_imgmsg(depth)
+        # depth = np.array(obs['depth']*255).astype('uint16')
+        # _depth = self.bridge.cv2_to_imgmsg(depth)
+        # self.depth_pubs[agent_id].publish(_depth)
+        
+        _depth= np.squeeze(obs['depth'], axis=2)
+        _depth = self.bridge.cv2_to_imgmsg(
+            _depth.astype(np.float32), encoding="passthrough"
+        )
         _depth.header.stamp = current_time
         _depth.header.frame_id = f"{ns}"
         self.depth_pubs[agent_id].publish(_depth)
@@ -93,42 +141,23 @@ class MultiRobotEnv(habitat.Env):
         _image.header = _depth.header
         self.image_pubs[agent_id].publish(_image)
 
-        camera_info = CameraInfo()
-        camera_info.header = _depth.header
-        camera_info.height = _depth.height
-        camera_info.width = _depth.width
-        camera_info.distortion_model = "plumb_bob"
-        camera_info.D = [0]*5   # All 0, no distortion
-        camera_info.K[0] = 570.3422241210938
-        camera_info.K[2] = 314.5
-        camera_info.K[4] = 570.3422241210938
-        camera_info.K[5] = 235.5
-        camera_info.K[8] = 1.0
-        camera_info.R[0] = 1.0
-        camera_info.R[4] = 1.0
-        camera_info.R[8] = 1.0
-        camera_info.P[0] = 570.3422241210938
-        camera_info.P[2] = 314.5
-        camera_info.P[5] = 570.3422241210938
-        camera_info.P[6] = 235.5
-        camera_info.P[10] = 1.0
+        camera_info = self.make_depth_camera_info_msg(_depth.header, _depth.height, _depth.width)
+
         self.camera_info_pubs[agent_id].publish(camera_info)
 
         # Publish ground truth tf of each robot
         trans, quat, euler = get_agent_position(self, agent_id)
-        transform = TransformStamped()
-        transform.header.frame_id = "map"
-        transform.header.stamp = current_time
-        transform.child_frame_id = ns
-        transform.transform = Transform(
-            translation=Vector3(*trans), rotation=Quaternion(*quat))
-        self.gt_tf_pub.sendTransformMessage(transform)
+        broadcast_tf(current_time, "map", f'{ns}/gt_tf', trans, quat)
+        broadcast_tf(current_time, f"{ns}/gt_tf", f"{ns}/base_scan")
+
+        # TODO replace tf from map to robot with real SLAM data
+        broadcast_tf(current_time, "map", ns, trans, quat)
         
         if self.last_position[agent_id] is not None:
             odom = Odometry()
             odom.header.stamp = current_time
             odom.header.frame_id = "map"
-            odom.child_frame_id = ns
+            odom.child_frame_id = f"{ns}/odom"
 
             # set the position
             odom.pose.pose = Pose(Point(*trans), Quaternion(*quat))
@@ -139,7 +168,7 @@ class MultiRobotEnv(habitat.Env):
             odom.twist.twist = Twist(Vector3(*v_trans), Vector3(*v_rot))
 
             # publish the message
-            self.odom_pub.publish(odom)
+            self.odom_pub[agent_id].publish(odom)
         self.last_position[agent_id] = trans
         self.last_euler[agent_id] = euler
 
@@ -182,11 +211,11 @@ class Robot:
         self.env.kick(self.agent_id)
 
 def main(argv):
-    opts, args = getopt.getopt(argv,"n:a:s:")
+    opts, args = getopt.getopt(argv,"n:a:s:r:")
     num_robots = 1
     action_freq = 30
     sample_freq = 10
-
+    required_freq = 5
     for opt, arg in opts:
         if opt in '-n':
             num_robots = int(arg)
@@ -194,6 +223,8 @@ def main(argv):
             action_freq = int(arg)
         elif opt in '-s':
             sample_freq = int(arg)
+        elif opt in '-r':
+            required_freq = int(arg)
 
     rospy.init_node("multi_robot_habitat_sim")
     config = habitat.get_config(config_paths=f"configs/tasks/MASLAM{num_robots}.yaml")
@@ -207,7 +238,7 @@ def main(argv):
 
     menv = MultiRobotEnv(config, agent_names, agent_ids,
                          multi_ns, action_id=0, action_freq=action_freq,
-                         sense_freq=sample_freq, required_freq=1)
+                         sense_freq=sample_freq, required_freq=required_freq)
     menv.reset()
 
     [Robot(menv, agent_names[i], i, 0, i, multi_ns[i], *(init_poses[i])) for i in agent_ids]
