@@ -1,5 +1,6 @@
 # !/usr/bin/python3
 import sys, getopt
+import os
 import cv2
 import numpy as np
 import time
@@ -211,23 +212,31 @@ class Robot:
         self.env.kick(self.agent_id)
 
 def main(argv):
-    opts, args = getopt.getopt(argv,"n:a:s:r:")
+    opts, args = getopt.getopt(argv,"d:c:n:a:s:r:")
     num_robots = 1
     action_freq = 30
     sample_freq = 10
     required_freq = 5
+    config_path = ""
+    # habitat_dir = "/home/guan/ros_ws/habitat-lab"
+    os.chdir(os.path.dirname(__file__))
     for opt, arg in opts:
         if opt in '-n':
             num_robots = int(arg)
         elif opt in '-a':
             action_freq = int(arg)
+        elif opt in '-d':
+            habitat_dir = arg
         elif opt in '-s':
             sample_freq = int(arg)
         elif opt in '-r':
             required_freq = int(arg)
-
+        elif opt in '-c':
+            config_path = arg
+    if not config_path:
+        config_path = f"configs/tasks/MASLAM{num_robots}.yaml"
     rospy.init_node("multi_robot_habitat_sim")
-    config = habitat.get_config(config_paths=f"configs/tasks/MASLAM{num_robots}.yaml")
+    config = habitat.get_config(config_paths=config_path)
     agent_names = config.SIMULATOR.AGENTS
     agent_ids = list(range(len(agent_names)))
     multi_ns = agent_names
