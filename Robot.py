@@ -149,27 +149,31 @@ class MultiRobotEnv(habitat.Env):
         # Publish ground truth tf of each robot
         trans, quat, euler = get_agent_position(self, agent_id)
         broadcast_tf(current_time, "map", f'{ns}/gt_tf', trans, quat)
-        broadcast_tf(current_time, f"{ns}/gt_tf", f"{ns}/base_scan")
 
         # TODO replace tf from map to robot with real SLAM data
         broadcast_tf(current_time, "map", ns, trans, quat)
+        broadcast_tf(current_time, "map", f'{ns}/odom', trans, quat)
         
-        if self.last_position[agent_id] is not None:
-            odom = Odometry()
-            odom.header.stamp = current_time
-            odom.header.frame_id = "map"
-            odom.child_frame_id = f"{ns}/odom"
+        if self.last_position[agent_id] is None:
+            self.last_position[agent_id] = trans
+            self.last_euler[agent_id] = euler
 
-            # set the position
-            odom.pose.pose = Pose(Point(*trans), Quaternion(*quat))
+        odom = Odometry()
+        odom.header.stamp = current_time
+        odom.header.frame_id = "map"
+        odom.child_frame_id = f"{ns}/odom"
 
-            # set the velocity
-            v_trans = (trans - self.last_position[agent_id])*self.sense_freq
-            v_rot = (euler - self.last_euler[agent_id]) * self.sense_freq
-            odom.twist.twist = Twist(Vector3(*v_trans), Vector3(*v_rot))
+        # set the position
+        odom.pose.pose = Pose(Point(*trans), Quaternion(*quat))
 
-            # publish the message
-            self.odom_pub[agent_id].publish(odom)
+        # set the velocity
+        v_trans = (trans - self.last_position[agent_id])*self.sense_freq
+        v_rot = (euler - self.last_euler[agent_id]) * self.sense_freq
+        odom.twist.twist = Twist(Vector3(*v_trans), Vector3(*v_rot))
+
+        # publish the message
+        self.odom_pub[agent_id].publish(odom)
+            
         self.last_position[agent_id] = trans
         self.last_euler[agent_id] = euler
 
