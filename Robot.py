@@ -74,6 +74,7 @@ class MultiRobotEnv(habitat.Env):
         self.camera_info_pubs = [rospy.Publisher(f"{ns}/camera/depth/camera_info", CameraInfo,  queue_size=1) for ns in multi_ns]
         self.odom_pub = [rospy.Publisher(f"{ns}/odom", Odometry, queue_size=1) for ns in multi_ns]
 
+        self.timer = rospy.Timer(rospy.Duration(0.05), self.tf_br)
         # rospy.Timer(1/action_freq, self.action_executor)
 
     def kick(self, agent_id):
@@ -83,21 +84,21 @@ class MultiRobotEnv(habitat.Env):
     def action_executor(self):
         while not rospy.is_shutdown():
             self.rate.sleep()
-        # with self.lock:
-            actions = {}
-            current_time = time.time()
-            for i in self.agent_ids:
-                if current_time - self.t_last_cmd_vel[i] > 1 / self.required_freq:
-                    continue
-                actions[i] = self.action_id
-            if actions:
-                self.step(actions)
+            with self.lock:
+                actions = {}
+                current_time = time.time()
+                self.current_time = rospy.Time.from_sec(current_time)
+                for i in self.agent_ids:
+                    if current_time - self.t_last_cmd_vel[i] > 1 / self.required_freq:
+                        continue
+                    actions[i] = self.action_id
+                if actions:
+                    self.step(actions)
             if self.count % self.action_per_sen == 0:
-                _current_time = rospy.Time.from_sec(current_time)
                 # publish the collected observations
                 obs = [self.get_observation_of(i) for i in range(len(self.agent_ids))]
                 for i in self.agent_ids:
-                    self.publish_obs(i, obs[i], _current_time)
+                    self.publish_obs(i, obs[i], self.current_time)
             self.count += 1
 
     def make_depth_camera_info_msg(self, header, height, width):
@@ -148,11 +149,6 @@ class MultiRobotEnv(habitat.Env):
 
         # Publish ground truth tf of each robot
         trans, quat, euler = get_agent_position(self, agent_id)
-        broadcast_tf(current_time, "map", f'{ns}/gt_tf', trans, quat)
-
-        # TODO replace tf from map to robot with real SLAM data
-        broadcast_tf(current_time, "map", ns, trans, quat)
-        broadcast_tf(current_time, "map", f'{ns}/odom', trans, quat)
         
         if self.last_position[agent_id] is None:
             self.last_position[agent_id] = trans
@@ -176,6 +172,20 @@ class MultiRobotEnv(habitat.Env):
             
         self.last_position[agent_id] = trans
         self.last_euler[agent_id] = euler
+
+    def tf_br(self, _):
+        with self.lock:
+            # current_time = rospy.Time.now()
+            for agent_id in self.agent_ids:
+                ns = self.multi_ns[agent_id]
+                trans, quat, _ = get_agent_position(self, agent_id)
+                
+                broadcast_tf(rospy.Time.now(), "map", f'{ns}/gt_tf', trans, quat)
+
+                # TODO replace tf from map to robot with real SLAM data
+                broadcast_tf(rospy.Time.now(), "map", f'{ns}/odom', trans, quat)
+                broadcast_tf(rospy.Time.now(), "map", ns, trans, quat)
+        
 
 class Robot:
     def __init__(self, env:MultiRobotEnv, agent_name,
