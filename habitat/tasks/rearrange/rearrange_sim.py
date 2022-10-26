@@ -33,7 +33,7 @@ from habitat_sim.nav import NavMeshSettings
 from habitat_sim.physics import JointMotorSettings, MotionType
 
 # flake8: noqa
-from habitat_sim.robots import FetchRobot, FetchRobotNoWheels
+# from habitat_sim.robots import FetchRobot, FetchRobotNoWheels
 from habitat_sim.sim import SimulatorBackend
 
 

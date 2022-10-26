@@ -19,6 +19,8 @@ import myRobotAction
 from my_utils import *
 from threading import Lock
 
+os.environ["MAGNUM_LOG"] = "quiet"
+os.environ["HABITAT_SIM_LOG"] = "quiet"
 
 def transform_rgb_bgr(image):
     return image[:, :, [2, 1, 0]]
