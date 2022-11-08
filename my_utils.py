@@ -7,10 +7,13 @@ from habitat.sims.habitat_simulator.actions import (
 from geometry_msgs.msg import Twist
 import quaternion
 from habitat.utils.geometry_utils import quaternion_to_list
-from tf.transformations import quaternion_from_euler, euler_from_quaternion
+from tf.transformations import quaternion_from_euler, euler_from_quaternion, quaternion_multiply
 
 import myRobotAction
 from threading import Lock
+
+import math
+pi_2 = quaternion_from_euler(0,0, math.pi)
 
 twist_lock = Lock()
 
@@ -45,10 +48,10 @@ def trans_habitat_to_ros(trans):
     '''
     The forward direction in habitat is z
     '''
-    return np.array([trans[2], trans[0], trans[1]], dtype=np.float64)*-1
+    return np.array([trans[2], trans[0], trans[1]], dtype=np.float64)
 
 def trans_ros_to_habitat(trans):
-    return np.array([trans[1], trans[2], trans[0]], dtype=np.float64)*-1
+    return np.array([trans[1], trans[2], trans[0]], dtype=np.float64)
 
 def quat_habitat_to_ros(quat):
     ''' The fucking quaternion package has a quaternion order of w, x, y, z,
@@ -58,10 +61,12 @@ def quat_habitat_to_ros(quat):
     assert isinstance(quat, quaternion.quaternion)
     quat = quaternion_to_list(quat)
     quat = np.array([-quat[2], -quat[0], quat[1], quat[3]])
+    quat = quaternion_multiply(quat, pi_2)
     return quat
 
 def quat_ros_to_habitat(quat):
     quat = list(quat)
+    quat = quaternion_multiply(quat, pi_2)
     quat = [quat[1], -quat[2], -quat[0], quat[3]]
     quat = [quat[3]] + quat[:3]
     return quaternion.as_quat_array(quat)
@@ -80,9 +85,8 @@ def euler_habitat_to_ros(euler):
 def set_initial_position(env: habitat.Env, agent_name, trans, rot):
     if len(rot) == 3:
         # Euler angle
-        rot = euler_ros_to_habitat(rot)
         rot = quaternion_from_euler(*rot)
-    getattr(env.config.SIMULATOR, agent_name)['START_POSITION'] = trans_ros_to_habitat(trans) * -1
+    getattr(env.config.SIMULATOR, agent_name)['START_POSITION'] = trans_ros_to_habitat(trans)
     getattr(env.config.SIMULATOR, agent_name)['START_ROTATION'] = quat_ros_to_habitat(rot)
     env.update_state()
 

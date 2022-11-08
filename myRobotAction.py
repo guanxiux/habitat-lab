@@ -44,7 +44,7 @@ class MoveAndRotate(habitat_sim.SceneNodeControl):
         w = twist.angular[2]
         # forward x in ROS
         _move_along(scene_node, -x, _Z_AXIS)
-        # left y in ROS
+        # move y in ROS
         _move_along(scene_node, -y, _X_AXIS)
         # turn right: yaw in ROS
         _rotate_local(
