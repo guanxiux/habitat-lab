@@ -72,7 +72,7 @@ class MultiRobotEnv(habitat.Env):
         self.rate = rospy.Rate(action_freq)
         self.bridge = CvBridge()
         self.depth_pubs = [rospy.Publisher(f"{ns}/camera/depth/image_raw", Image, queue_size=1) for ns in multi_ns]
-        self.image_pubs = [rospy.Publisher(f"{ns}/image", Image, queue_size=1) for ns in multi_ns]
+        self.image_pubs = [rospy.Publisher(f"{ns}/camera/rgb/image_raw", Image, queue_size=1) for ns in multi_ns]
         self.camera_info_pubs = [rospy.Publisher(f"{ns}/camera/depth/camera_info", CameraInfo,  queue_size=1) for ns in multi_ns]
         self.odom_pub = [rospy.Publisher(f"{ns}/odom", Odometry, queue_size=1) for ns in multi_ns]
 
