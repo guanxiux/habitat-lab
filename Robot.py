@@ -129,9 +129,10 @@ class MultiRobotEnv(habitat.Env):
         ns = self.multi_ns[agent_id]
         # shape = obs['depth'].shape
         image = np.array(obs['rgb'])
-        # depth = np.array(obs['depth']*255).astype('uint16')
-        # _depth = self.bridge.cv2_to_imgmsg(depth)
-        # self.depth_pubs[agent_id].publish(_depth)
+        # Publish ground truth tf of each robot
+        trans, quat, euler = get_agent_position(self, agent_id)
+        br.sendTransform(trans, quat, current_time, f'{ns}', 'map')
+        br.sendTransform(trans, quat, current_time, f'{ns}/odom', 'map')
         
         _depth= np.squeeze(obs['depth'], axis=2)
         _depth = self.bridge.cv2_to_imgmsg(
@@ -150,10 +151,6 @@ class MultiRobotEnv(habitat.Env):
 
         self.camera_info_pubs[agent_id].publish(camera_info)
 
-        # Publish ground truth tf of each robot
-        trans, quat, euler = get_agent_position(self, agent_id)
-        br.sendTransform(trans, quat, current_time, f'{ns}', 'map')
-        br.sendTransform(trans, quat, current_time, f'{ns}/odom', 'map')
         
         if self.last_position[agent_id] is None:
             self.last_position[agent_id] = trans
