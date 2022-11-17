@@ -7,7 +7,7 @@ SIMULATOR:
     RADIUS: 0.1
     SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
     IS_SET_START_STATE: True
-    INIT_POSE: [6., 2., -180.] # [x, y, yaw]
+    INIT_POSE: [8., 4., -180.] # [x, y, yaw]
   AGENTS: ['robot0']
   HABITAT_SIM_V0:
     GPU_DEVICE_ID: 0
