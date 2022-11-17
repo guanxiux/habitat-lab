@@ -74,7 +74,7 @@ class MultiRobotEnv(habitat.Env):
         self.camera_info_pubs = [rospy.Publisher(f"{ns}/camera/depth/camera_info", CameraInfo,  queue_size=1) for ns in multi_ns]
         self.odom_pub = [rospy.Publisher(f"{ns}/odom", Odometry, queue_size=1) for ns in multi_ns]
 
-        self.timer = rospy.Timer(rospy.Duration(0.05), self.tf_br)
+        self.timer = rospy.Timer(rospy.Duration(0.01), self.tf_br)
         # rospy.Timer(1/action_freq, self.action_executor)
 
     def kick(self, agent_id):
@@ -255,6 +255,9 @@ def main(argv):
     agent_ids = list(range(len(agent_names)))
     multi_ns = agent_names
     init_poses = [list(getattr(config.SIMULATOR, agent_name).INIT_POSE) for agent_name in agent_names]
+    for pose in init_poses:
+        # We use angles in init pose config file, to radians
+        pose[-1] = math.radians(pose[-1])
     # Avoid overwrite config error
     for agent_name in agent_names:
         del getattr(config.SIMULATOR, agent_name)["INIT_POSE"]
