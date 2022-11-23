@@ -197,7 +197,7 @@ class Robot:
         self.agent_name = agent_name
         self.agent_id = agent_id
         self.action_id = action_id
-        self.init_trans = [x, y, 0.]
+        self.init_trans = [x, y, 0.16]
         self.init_rot = [0, 0, w]
         self.action_freq = env.action_freq
         set_initial_position(env, agent_name, self.init_trans, self.init_rot)
