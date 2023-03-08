@@ -1,0 +1,40 @@
+POSITION_OFFSET: [0., 0., 2.7]
+ENVIRONMENT:
+    # Endless episode
+    MAX_EPISODE_STEPS: 0
+SIMULATOR:
+  SCENE_ID: data/scene_datasets/habitat-test-scenes/apartment_1.glb
+  SCENE:
+    "data/scene_datasets/habitat-test-scenes/apartment_1.glb"
+  robot0:
+    HEIGHT: 0.5
+    RADIUS: 0.2
+    SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
+    IS_SET_START_STATE: True
+    INIT_POSE: [0., 0., -1.57, 180] # [x, y, yaw]
+  AGENTS: ['robot0']
+  HABITAT_SIM_V0:
+    GPU_DEVICE_ID: 0
+  RGB_SENSOR:
+    WIDTH: 256
+    HEIGHT: 256
+  DEPTH_SENSOR:
+    WIDTH: 256
+    HEIGHT: 256
+    NORMALIZE_DEPTH: False
+TASK:
+  TYPE: Nav-v0
+
+  SENSORS: ["POINTGOAL_WITH_GPS_COMPASS_SENSOR"]
+  POINTGOAL_WITH_GPS_COMPASS_SENSOR:
+    GOAL_FORMAT: "POLAR"
+    DIMENSIONALITY: 2
+  GOAL_SENSOR_UUID: pointgoal_with_gps_compass
+  POSSIBLE_ACTIONS: ["STOP", "MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT", "VELOCITY_CONTROL"]
+
+  MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL']
+  SUCCESS:
+    SUCCESS_DISTANCE: 0.2
+
+DATASET:
+  DATA_PATH: /habitat-lab/data/datasets/pointnav/maslam/my.json.gz

@@ -5,11 +5,12 @@ import cv2
 import numpy as np
 import time
 import rospy
-from tf.transformations import quaternion_from_euler
+from tf.transformations import quaternion_from_euler, quaternion_multiply
 from cv_bridge import CvBridge
 
 import habitat
 from habitat.config import Config
+from habitat.utils.geometry_utils import quaternion_to_list
 from geometry_msgs.msg import Twist, Pose, Point, Quaternion, TransformStamped, Transform, Vector3
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud2, PointField, JointState, LaserScan, Image, CameraInfo
@@ -49,7 +50,7 @@ class MultiRobotEnv(habitat.Env):
     Env to support multi agent action controlled by ROS
     '''
     def __init__(self, config: Config, agent_names, agent_ids, multi_ns,
-                 action_id, action_freq=30, sense_freq=10, required_freq=1) -> None:
+                 action_id, pose_offset=[0.,0.,0.], action_freq=30, sense_freq=10, required_freq=1) -> None:
         super().__init__(config=config)
 
         self.action_id = action_id
@@ -66,7 +67,7 @@ class MultiRobotEnv(habitat.Env):
         self.count = 0
         self.required_freq = required_freq
         self.lock = Lock()
-        
+        self.pos_offset = np.array(pose_offset)
         self.rate = rospy.Rate(action_freq)
         self.bridge = CvBridge()
         self.depth_pubs = [rospy.Publisher(f"{ns}/camera/depth/image_raw", Image, queue_size=1) for ns in multi_ns]
@@ -129,6 +130,7 @@ class MultiRobotEnv(habitat.Env):
         image = np.array(obs['rgb'])
         # Publish ground truth tf of each robot
         trans, quat, euler = get_agent_position(self, agent_id)
+        trans += self.pos_offset
         br.sendTransform(trans, quat, current_time, f'{ns}', 'map')
         br.sendTransform(trans, quat, current_time, f'{ns}/odom', 'map')
         
@@ -137,7 +139,7 @@ class MultiRobotEnv(habitat.Env):
             _depth.astype(np.float32), encoding="passthrough"
         )
         _depth.header.stamp = current_time
-        _depth.header.frame_id = f"{ns}"
+        _depth.header.frame_id = f"{ns}/camera"
         self.depth_pubs[agent_id].publish(_depth)
         # check = self.bridge.imgmsg_to_cv2(_depth)
 
@@ -179,7 +181,7 @@ class MultiRobotEnv(habitat.Env):
             for agent_id in self.agent_ids:
                 ns = self.multi_ns[agent_id]
                 trans, quat, _ = get_agent_position(self, agent_id)
-                
+                trans += self.pos_offset
                 broadcast_tf(current_time, "map", f'{ns}/gt_tf', trans, quat)
 
                 # TODO replace tf from map to robot with real SLAM data
@@ -190,14 +192,15 @@ class MultiRobotEnv(habitat.Env):
 class Robot:
     def __init__(self, env:MultiRobotEnv, agent_name,
                  agent_id, action_id,
-                 idx, ns, x=0, y=0, w=0) -> None:
+                 idx, ns, xyzyaw) -> None:
         # x, y, w: initial translation and yaw
         # habitat config
         self.env = env
         self.agent_name = agent_name
         self.agent_id = agent_id
         self.action_id = action_id
-        self.init_trans = [x, y, 0.16]
+        x, y, z, w = xyzyaw
+        self.init_trans = [x, y, z]
         self.init_rot = [0, 0, w]
         self.action_freq = env.action_freq
         set_initial_position(env, agent_name, self.init_trans, self.init_rot)
@@ -248,26 +251,32 @@ def main(argv):
         elif opt in '-c':
             config_path = arg
     if not config_path:
-        config_path = f"configs/tasks/MASLAM{num_robots}.yaml"
+        config_path = f"configs/tasks/MASLAM{num_robots}_apartment.yaml"
+    print(config_path)
     rospy.init_node("multi_robot_habitat_sim")
     config = habitat.get_config(config_paths=config_path)
     agent_names = config.SIMULATOR.AGENTS
     agent_ids = list(range(len(agent_names)))
     multi_ns = agent_names
     init_poses = [list(getattr(config.SIMULATOR, agent_name).INIT_POSE) for agent_name in agent_names]
+    pos_offset = np.array(config.POSITION_OFFSET)
     for pose in init_poses:
         # We use angles in init pose config file, to radians
         pose[-1] = math.radians(pose[-1])
     # Avoid overwrite config error
     for agent_name in agent_names:
         del getattr(config.SIMULATOR, agent_name)["INIT_POSE"]
-
+    config.defrost()
+    config.SIMULATOR.SCENE = "data/scene_datasets/habitat-test-scenes/apartment_1.glb"
+    config.SIMULATOR.scene_id = "data/scene_datasets/habitat-test-scenes/apartment_1.glb"
+    config.freeze()
     menv = MultiRobotEnv(config, agent_names, agent_ids,
-                         multi_ns, action_id=0, action_freq=action_freq,
-                         sense_freq=sample_freq, required_freq=required_freq)
+                         multi_ns, action_id=0, pose_offset=pos_offset,
+                         action_freq=action_freq, sense_freq=sample_freq,
+                         required_freq=required_freq)
     menv.reset()
 
-    [Robot(menv, agent_names[i], i, 0, i, multi_ns[i], *(init_poses[i])) for i in agent_ids]
+    [Robot(menv, agent_names[i], i, 0, i, multi_ns[i], init_poses[i]) for i in agent_ids]
     print("Environment creation successful")
 
     menv.action_executor()
