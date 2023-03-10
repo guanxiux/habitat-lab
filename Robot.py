@@ -185,7 +185,7 @@ class MultiRobotEnv(habitat.Env):
                 broadcast_tf(current_time, "map", f'{ns}/gt_tf', trans, quat)
 
                 # TODO replace tf from map to robot with real SLAM data
-                broadcast_tf(current_time, "map", f'{ns}/odom', trans, quat)
+                # broadcast_tf(current_time, "map", f'{ns}/odom', trans, quat)
                 broadcast_tf(current_time, "map", ns, trans, quat)
         
 

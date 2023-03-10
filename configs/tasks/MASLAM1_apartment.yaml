@@ -1,4 +1,4 @@
-POSITION_OFFSET: [0., 0., 2.7]
+POSITION_OFFSET: [0., 0., 1.7]
 ENVIRONMENT:
     # Endless episode
     MAX_EPISODE_STEPS: 0
