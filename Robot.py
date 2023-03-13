@@ -135,6 +135,11 @@ class MultiRobotEnv(habitat.Env):
         br.sendTransform(trans, quat, current_time, f'{ns}/odom', 'map')
         
         _depth= np.squeeze(obs['depth'], axis=2)
+        # Fix empty holes 
+        zero_mask = _depth == 0.
+        _depth[zero_mask] = 10.
+        # move_up = np.vstack([zero_mask[1:], [zero_mask[0]]])
+        # move_down = np.vstack([[zero_mask[-1]], zero_mask[:-1]])
         _depth = self.bridge.cv2_to_imgmsg(
             _depth.astype(np.float32), encoding="passthrough"
         )
