@@ -3,7 +3,6 @@ ENVIRONMENT:
     # Endless episode
     MAX_EPISODE_STEPS: 0
 SIMULATOR:
-  SCENE_ID: data/scene_datasets/habitat-test-scenes/apartment_1.glb
   SCENE:
     "data/scene_datasets/habitat-test-scenes/apartment_1.glb"
   robot0:
@@ -12,7 +11,25 @@ SIMULATOR:
     SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
     IS_SET_START_STATE: True
     INIT_POSE: [0., 0., -1.57, 180] # [x, y, yaw]
-  AGENTS: ['robot0']
+    START_POSITION: [6., 0.01, 5.]
+    START_ROTATION: [0., 0., 0., 1.]
+  robot1:
+    HEIGHT: 0.5
+    RADIUS: 0.2
+    SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
+    IS_SET_START_STATE: True
+    INIT_POSE: [1., 5., -1.57, 90] # [x, y, yaw]
+    START_POSITION: [6., 0.01, 5.]
+    START_ROTATION: [0., 0., 0., 1.]
+  robot2:
+    HEIGHT: 0.5
+    RADIUS: 0.2
+    SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
+    IS_SET_START_STATE: True
+    INIT_POSE: [3., 1., -1.57, 270] # [x, y, yaw]
+    START_POSITION: [6., 0.01, 5.]
+    START_ROTATION: [0., 0., 0., 1.]
+  AGENTS: ['robot0', 'robot1', 'robot2']
   HABITAT_SIM_V0:
     GPU_DEVICE_ID: 0
   RGB_SENSOR:

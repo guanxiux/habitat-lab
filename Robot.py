@@ -272,8 +272,6 @@ def main(argv):
     for agent_name in agent_names:
         del getattr(config.SIMULATOR, agent_name)["INIT_POSE"]
     config.defrost()
-    config.SIMULATOR.SCENE = "data/scene_datasets/habitat-test-scenes/apartment_1.glb"
-    config.SIMULATOR.scene_id = "data/scene_datasets/habitat-test-scenes/apartment_1.glb"
     config.freeze()
     menv = MultiRobotEnv(config, agent_names, agent_ids,
                          multi_ns, action_id=0, pose_offset=pos_offset,

@@ -31,12 +31,12 @@ def set_twist(env, agent_id, action_id, twist: Twist=None, noise=0.):
     env.set_agent_action_spec(agent_id, action_id, myRobotAction.MyTwist([x, y, z], [pitch, roll, yaw], noise=noise))
     twist_lock.release()
 
+HabitatSimActions.extend_action_space("move_rotate")
+HabitatSimActions.extend_action_space("noisy_move_rotate")
 def set_my_action_space(env, agent_id):
     '''
     Set the action_space to personalized two actions
     '''
-    HabitatSimActions.extend_action_space("move_rotate")
-    HabitatSimActions.extend_action_space("noisy_move_rotate")
 
     agent = env.sim.agents[agent_id]
     agent.agent_config.action_space = {
