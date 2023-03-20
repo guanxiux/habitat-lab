@@ -204,18 +204,31 @@ class Robot:
         self.agent_name = agent_name
         self.agent_id = agent_id
         self.action_id = action_id
-        x, y, z, w = xyzyaw
-        self.init_trans = [x, y, z]
-        self.init_rot = [0, 0, w]
         self.action_freq = env.action_freq
-        set_initial_position(env, agent_name, self.init_trans, self.init_rot)
-        set_my_action_space(env, agent_id)
+        x, y, z, w = xyzyaw
+        trans = [x, y, z]
+        rot = [0, 0, w]
+        set_initial_position(self.env, self.agent_name, trans, rot)
 
+        set_my_action_space(self.env, self.agent_id)
         # ROS config
         self.idx = idx
         self.ns = ns
 
         self.vel_cmd_sub = rospy.Subscriber(f"{ns}/cmd_vel",  Twist, self.sub_vel, queue_size=1)
+        self.pose_sub = rospy.Subscriber(f"{ns}/pose", Pose, self.sub_pose, queue_size=10)
+
+    def sub_pose(self, pose: Pose):
+        x = pose.position.x
+        y = pose.position.y
+        z = pose.position.z
+        trans = np.array([x,y,z])
+        _x = pose.orientation.x
+        _y = pose.orientation.y
+        _z = pose.orientation.z
+        _w = pose.orientation.w
+        quat = np.array([_x, _y, _z, _w])
+        set_initial_position(self.env, self.agent_name, trans, quat)
 
     def sub_vel(self, cmd_vel: Twist):
         if not isinstance(cmd_vel.linear, list):
