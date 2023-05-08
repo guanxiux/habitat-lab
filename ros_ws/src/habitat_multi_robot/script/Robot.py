@@ -246,32 +246,17 @@ class Robot:
 
         self.env.kick(self.agent_id)
 
-def main(argv):
-    opts, args = getopt.getopt(argv,"d:c:n:a:s:r:")
-    num_robots = 1
-    action_freq = 30
-    sample_freq = 10
-    required_freq = 5
-    config_path = ""
-    # habitat_dir = "/home/guan/ros_ws/habitat-lab"
-    os.chdir(os.path.dirname(__file__))
-    for opt, arg in opts:
-        if opt in '-n':
-            num_robots = int(arg)
-        elif opt in '-a':
-            action_freq = int(arg)
-        elif opt in '-d':
-            habitat_dir = arg
-        elif opt in '-s':
-            sample_freq = int(arg)
-        elif opt in '-r':
-            required_freq = int(arg)
-        elif opt in '-c':
-            config_path = arg
-    if not config_path:
-        config_path = f"configs/tasks/MASLAM{num_robots}_apartment.yaml"
-    print(config_path)
+if __name__ == "__main__":
     rospy.init_node("multi_robot_habitat_sim")
+    num_robots = rospy.get_param("/number_of_robots", default=1)
+    action_freq = rospy.get_param("/action_frequency", default=30)
+    sample_freq = rospy.get_param("/sample_frequency", default=30)
+    required_freq = rospy.get_param("/required_frequency", default=30)
+    config_path = rospy.get_param("/habitat_config_path", default=f"/habitat-lab/configs/tasks/MASLAM{num_robots}_apartment.yaml")
+
+    os.chdir(os.path.dirname(__file__))
+    print(f"Number of robots: {num_robots}; action frequency: {action_freq}Hz; sample frequency: {sample_freq}Hz; required frequency: {required_freq}Hz")
+    print(config_path)
     config = habitat.get_config(config_paths=config_path)
     agent_names = config.SIMULATOR.AGENTS
     agent_ids = list(range(len(agent_names)))
@@ -297,6 +282,3 @@ def main(argv):
 
     menv.action_executor()
     rospy.spin()
-
-if __name__ == "__main__":
-    main(sys.argv[1:])
