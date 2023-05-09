@@ -11,6 +11,8 @@ from cv_bridge import CvBridge
 import habitat
 from habitat.config import Config
 from habitat.utils.geometry_utils import quaternion_to_list
+from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
+
 from geometry_msgs.msg import Twist, Pose, Point, Quaternion, TransformStamped, Transform, Vector3
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud2, PointField, JointState, LaserScan, Image, CameraInfo
@@ -19,6 +21,7 @@ from tf import TransformBroadcaster
 import myRobotAction
 from my_utils import *
 from threading import Lock
+import json
 
 
 def transform_rgb_bgr(image):
@@ -50,8 +53,8 @@ class MultiRobotEnv(habitat.Env):
     Env to support multi agent action controlled by ROS
     '''
     def __init__(self, config: Config, agent_names, agent_ids, multi_ns,
-                 action_id, pose_offset=[0.,0.,0.], action_freq=30, sense_freq=10, required_freq=1) -> None:
-        super().__init__(config=config)
+                 action_id, dataset: habitat.Dataset=None, pose_offset=[0.,0.,0.], action_freq=30, sense_freq=10, required_freq=1) -> None:
+        super().__init__(config=config, dataset=dataset)
 
         self.action_id = action_id
         self.agent_names = agent_names
@@ -197,7 +200,7 @@ class MultiRobotEnv(habitat.Env):
 class Robot:
     def __init__(self, env:MultiRobotEnv, agent_name,
                  agent_id, action_id,
-                 idx, ns, xyzyaw) -> None:
+                 idx, ns) -> None:
         # x, y, w: initial translation and yaw
         # habitat config
         self.env = env
@@ -205,10 +208,12 @@ class Robot:
         self.agent_id = agent_id
         self.action_id = action_id
         self.action_freq = env.action_freq
-        x, y, z, w = xyzyaw
-        trans = [x, y, z]
-        rot = [0, 0, w]
-        set_initial_position(self.env, self.agent_name, trans, rot)
+
+        # start_pos = env._sim.sample_navigable_point()
+        start_pos = env._sim.pathfinder.get_random_navigable_point()
+        start_yaw = np.random.uniform(0, 2 * np.pi)
+
+        set_initial_position(self.env, self.agent_name, start_pos, [0, 0, start_yaw])
 
         set_my_action_space(self.env, self.agent_id)
         # ROS config
@@ -246,38 +251,47 @@ class Robot:
 
         self.env.kick(self.agent_id)
 
+
+# DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "data/scene_datasets/habitat-test-scenes/apartment_1.glb", "start_position": [-1.2676633596420288, 0.2047852873802185, 12.595427513122559], "start_rotation": [0, 0.4536385088584658, 0, 0.8911857849408661], "info": {"geodesic_distance": 6.335183143615723, "difficulty": "easy"}, "goals": [{"position": [2.2896811962127686, 0.11950381100177765, 16.97636604309082], "radius": null}], "shortest_paths": null, "start_room": null}]}'
+
+DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "data/scene_datasets/habitat-test-scenes/apartment_1.glb"}]}'
+
 if __name__ == "__main__":
     rospy.init_node("multi_robot_habitat_sim")
     num_robots = rospy.get_param("/number_of_robots", default=1)
     action_freq = rospy.get_param("/action_frequency", default=30)
     sample_freq = rospy.get_param("/sample_frequency", default=30)
     required_freq = rospy.get_param("/required_frequency", default=30)
-    config_path = rospy.get_param("/habitat_config_path", default=f"/habitat-lab/configs/tasks/MASLAM{num_robots}_apartment.yaml")
+    config_path = rospy.get_param("/habitat_config_path",
+        default="/habitat-lab/configs/ours/MASLAM_apartment_three_robots.yaml")
+    scene_id = rospy.get_param("/habitat_scene_id",
+        default="/habitat-lab/data/replica/apartment_1.glb")
 
-    os.chdir(os.path.dirname(__file__))
-    print(f"Number of robots: {num_robots}; action frequency: {action_freq}Hz; sample frequency: {sample_freq}Hz; required frequency: {required_freq}Hz")
-    print(config_path)
+    rospy.loginfo(f"Number of robots: {num_robots}; action frequency: {action_freq}Hz; sample frequency: {sample_freq}Hz; required frequency: {required_freq}Hz; scene_id: {scene_id}")
+    rospy.loginfo(f"config path: {config_path}")
     config = habitat.get_config(config_paths=config_path)
+    os.chdir(os.path.dirname(__file__))
+
+    # Config dataset
+    dataset_config = json.loads(DEFAULT_DATASET_JSON)
+    for episode in dataset_config['episodes']:
+        episode['scene_id'] = scene_id
+    dataset = PointNavDatasetV1()
+    dataset.from_json(json.dumps(dataset_config))
+
     agent_names = config.SIMULATOR.AGENTS
     agent_ids = list(range(len(agent_names)))
     multi_ns = agent_names
-    init_poses = [list(getattr(config.SIMULATOR, agent_name).INIT_POSE) for agent_name in agent_names]
     pos_offset = np.array(config.POSITION_OFFSET)
-    for pose in init_poses:
-        # We use angles in init pose config file, to radians
-        pose[-1] = math.radians(pose[-1])
-    # Avoid overwrite config error
-    for agent_name in agent_names:
-        del getattr(config.SIMULATOR, agent_name)["INIT_POSE"]
-    config.defrost()
-    config.freeze()
+
     menv = MultiRobotEnv(config, agent_names, agent_ids,
-                         multi_ns, action_id=0, pose_offset=pos_offset,
+                         multi_ns, dataset=dataset, action_id=0, pose_offset=pos_offset,
                          action_freq=action_freq, sense_freq=sample_freq,
                          required_freq=required_freq)
     menv.reset()
 
-    [Robot(menv, agent_names[i], i, 0, i, multi_ns[i], init_poses[i]) for i in agent_ids]
+    # Register robot handler to menv
+    [Robot(menv, agent_names[i], i, 0, i, multi_ns[i]) for i in agent_ids]
     print("Environment creation successful")
 
     menv.action_executor()
