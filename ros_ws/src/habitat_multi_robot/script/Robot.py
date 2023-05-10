@@ -254,7 +254,7 @@ class Robot:
 
 # DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "data/scene_datasets/habitat-test-scenes/apartment_1.glb", "start_position": [-1.2676633596420288, 0.2047852873802185, 12.595427513122559], "start_rotation": [0, 0.4536385088584658, 0, 0.8911857849408661], "info": {"geodesic_distance": 6.335183143615723, "difficulty": "easy"}, "goals": [{"position": [2.2896811962127686, 0.11950381100177765, 16.97636604309082], "radius": null}], "shortest_paths": null, "start_room": null}]}'
 
-DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "data/scene_datasets/habitat-test-scenes/apartment_1.glb"}]}'
+DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "/habitat-lab/data/Replica/apartment_0/mesh.ply"}]}'
 
 if __name__ == "__main__":
     rospy.init_node("multi_robot_habitat_sim")
@@ -265,7 +265,7 @@ if __name__ == "__main__":
     config_path = rospy.get_param("/habitat_config_path",
         default="/habitat-lab/configs/ours/MASLAM_apartment_three_robots.yaml")
     scene_id = rospy.get_param("/habitat_scene_id",
-        default="/habitat-lab/data/replica/apartment_1.glb")
+        default="/habitat-lab/data/Replica/apartment_0/mesh.ply")
 
     rospy.loginfo(f"Number of robots: {num_robots}; action frequency: {action_freq}Hz; sample frequency: {sample_freq}Hz; required frequency: {required_freq}Hz; scene_id: {scene_id}")
     rospy.loginfo(f"config path: {config_path}")
