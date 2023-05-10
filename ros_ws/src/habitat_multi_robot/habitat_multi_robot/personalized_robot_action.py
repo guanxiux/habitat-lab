@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
-r"""
+"""
+Self-defined robot actions
 """
 
 import numpy as np
 import magnum as mn
-import habitat
-import habitat_sim
-from tf.transformations import quaternion_from_euler
+from tf_transformations import quaternion_from_euler
 from geometry_msgs.msg import Twist
-from my_utils import *
+import habitat_sim
+import habitat
 
 _X_AXIS = 0
 _Y_AXIS = 1
@@ -71,13 +71,14 @@ class NoisyMoveAndRotate(habitat_sim.SceneNodeControl):
         )
 
 
-if __name__ == "__main__":    
+if __name__ == "__main__":
+    from .utils import *
     config = habitat.get_config(config_paths="configs/tasks/pointnav.yaml")
     agent_names = config.SIMULATOR.AGENTS
     config.freeze()
     with habitat.Env(config=config) as env:
         env.reset()
-        set_my_action_space(env, 0)
+        set_action_space(env, 0)
         set_initial_position(env, agent_names[0], [4, 0, 0], [0, 0, 0])
         trans, _, euler = get_agent_position(env, 0)
         print(f'Step 0: Agent0 trans {trans} euler {euler}')

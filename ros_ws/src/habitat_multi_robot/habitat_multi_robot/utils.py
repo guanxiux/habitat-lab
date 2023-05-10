@@ -1,18 +1,18 @@
+from threading import Lock
+import math
 import numpy as np
-import habitat
+from geometry_msgs.msg import Twist
+from tf_transformations import quaternion_from_euler, euler_from_quaternion, quaternion_multiply
+import quaternion
 from habitat_sim import ActionSpec
+import habitat
 from habitat.sims.habitat_simulator.actions import (
     HabitatSimActions,
 )
-from geometry_msgs.msg import Twist
-import quaternion
 from habitat.utils.geometry_utils import quaternion_to_list
-from tf.transformations import quaternion_from_euler, euler_from_quaternion, quaternion_multiply
 
-import myRobotAction
-from threading import Lock
+from . import personalized_robot_action
 
-import math
 pi_2 = quaternion_from_euler(0,0, math.pi)
 
 twist_lock = Lock()
@@ -28,21 +28,8 @@ def set_twist(env, agent_id, action_id, twist: Twist=None, noise=0.):
         twist.angular = np.array([angular.x, angular.y, angular.z])
         # habitat seems to use degree in rotation 
     pitch, roll, yaw = np.rad2deg(twist.angular) * -1
-    env.set_agent_action_spec(agent_id, action_id, myRobotAction.MyTwist([x, y, z], [pitch, roll, yaw], noise=noise))
+    env.set_agent_action_spec(agent_id, action_id, personalized_robot_action.MyTwist([x, y, z], [pitch, roll, yaw], noise=noise))
     twist_lock.release()
-
-HabitatSimActions.extend_action_space("move_rotate")
-HabitatSimActions.extend_action_space("noisy_move_rotate")
-def set_my_action_space(env, agent_id):
-    '''
-    Set the action_space to personalized two actions
-    '''
-
-    agent = env.sim.agents[agent_id]
-    agent.agent_config.action_space = {
-            0: ActionSpec("move_rotate", Twist()), 
-            1: ActionSpec("noisy_move_rotate", Twist())
-        }
 
 def trans_habitat_to_ros(trans):
     '''
@@ -102,3 +89,22 @@ def get_sensor_state(env: habitat.Env, agent_id: int=0):
     state = env.get_state_of(agent_id)
     return state.sensor_states
     # return env.sim.get_agent(agent_id).state.sensor_states
+
+def construct(Constructor, args):
+    keys = Constructor.get_fields_and_field_types().keys()
+    return Constructor(**dict(zip(keys, args)))
+
+def register_my_actions():
+    HabitatSimActions.extend_action_space("move_rotate")
+    HabitatSimActions.extend_action_space("noisy_move_rotate")
+    return "Registered self-defined action: move_rotate, noisy_move_rotate."
+
+def set_action_space(env, agent_id):
+    '''
+    Set the action_space to personalized two actions
+    '''
+    agent = env.sim.agents[agent_id]
+    agent.agent_config.action_space = {
+            0: ActionSpec("move_rotate", Twist()), 
+            1: ActionSpec("noisy_move_rotate", Twist())
+        }
