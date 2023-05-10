@@ -3,8 +3,6 @@ ENVIRONMENT:
     # Endless episode
     MAX_EPISODE_STEPS: 0
 SIMULATOR:
-  SCENE:
-    "data/scene_datasets/habitat-test-scenes/apartment_1.glb"
   robot0:
     HEIGHT: 0.5
     RADIUS: 0.2
@@ -52,6 +50,3 @@ TASK:
   MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL']
   SUCCESS:
     SUCCESS_DISTANCE: 0.2
-
-DATASET:
-  DATA_PATH: /habitat-lab/data/datasets/pointnav/maslam/my.json.gz
