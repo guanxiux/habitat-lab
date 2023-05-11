@@ -4,7 +4,7 @@ from threading import Lock
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.parameter import Parameter
+from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import ReentrantCallbackGroup
 from tf_transformations import quaternion_from_euler
@@ -17,6 +17,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image, CameraInfo
 
 import habitat
+from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
 
 from utils import construct, set_initial_position,\
@@ -25,11 +26,11 @@ from utils import construct, set_initial_position,\
 def transform_rgb_bgr(image):
     return image[:, :, [2, 1, 0]]
 
-DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "/habitat-lab/data/Replica/apartment_0/mesh.ply", "start_position": [-1.2676633596420288, 0.2047852873802185, 12.595427513122559], "start_rotation": [0, 0.4536385088584658, 0, 0.8911857849408661], "info": {"geodesic_distance": 6.335183143615723, "difficulty": "easy"}, "goals": [{"position": [2.2896811962127686, 0.11950381100177765, 16.97636604309082], "radius": null}], "shortest_paths": null, "start_room": null}]}'
+DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "/habitat-lab/data/Replica/apartment_0/mesh.ply", "start_position": [0, 0, 0], "start_rotation": [0, 0, 0, 1], "info": {"geodesic_distance": 6.335183143615723, "difficulty": "easy"}, "goals": [{"position": [2.2896811962127686, 0.11950381100177765, 16.97636604309082], "radius": null}], "shortest_paths": null, "start_room": null}]}'
 
 # DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "/habitat-lab/data/Replica/apartment_0/mesh.ply"}]}'
 
-class MultiRobotEnv(habitat.Env, Node):
+class MultiRobotEnv(Node):
     '''
     Env to support multi agent action controlled by ROS
     '''
@@ -44,7 +45,7 @@ class MultiRobotEnv(habitat.Env, Node):
         self.declare_parameter("/habitat_config_path",
             "/habitat-lab/configs/ours/MASLAM_apartment_three_robots.yaml")
         self.declare_parameter("/habitat_scene_id",
-            "/habitat-lab/data/Replica/apartment_0/mesh.ply")
+            "/habitat-lab/data/Replica/apartment_1.glb")
 
         num_robots = self.get_parameter(
             "/number_of_robots").get_parameter_value().integer_value
@@ -63,13 +64,17 @@ class MultiRobotEnv(habitat.Env, Node):
         self.get_logger().info(f"Number of robots: {num_robots}; action frequency: {action_freq}Hz; sample frequency: {sense_freq}Hz; required frequency: {required_freq}Hz; config path: {config_path}; scene_id: {scene_id}")
 
         config = habitat.get_config(config_paths=config_path)
+        config.defrost()
+        config.SIMULATOR.SCENE = scene_id
+        config.freeze()
         dataset_config = json.loads(DEFAULT_DATASET_JSON)
         for episode in dataset_config['episodes']:
             episode['scene_id'] = scene_id
         dataset = PointNavDatasetV1()
         dataset.from_json(json.dumps(dataset_config))
         register_my_actions()
-        habitat.Env.__init__(self, config, dataset=dataset)
+        self.sim: HabitatSim = habitat.sims.make_sim("Sim-v0", config=config.SIMULATOR)
+        # habitat.Env.__init__(self, config, dataset=dataset)
 
         agent_names = config.SIMULATOR.AGENTS
         agent_ids = list(range(len(agent_names)))
@@ -79,7 +84,7 @@ class MultiRobotEnv(habitat.Env, Node):
         self.agent_names = agent_names
         self.agent_ids = agent_ids
         self.multi_ns = agent_names
-        self.t_last_cmd_vel = [self.get_clock().now() for i in range(agent_ids)]
+        self.t_last_cmd_vel = [self.get_clock().now() for _ in agent_ids]
         self.last_position = [None] * len(agent_ids)
         self.last_euler = [None] * len(agent_ids)
         assert sense_freq <= action_freq
@@ -119,7 +124,7 @@ class MultiRobotEnv(habitat.Env, Node):
             quat = rot
         transform = TransformStamped()
         transform.header.frame_id = base
-        transform.header.stamp = current_time
+        transform.header.stamp = current_time.to_msg()
         transform.child_frame_id = target
         transform.transform = Transform(
             translation=construct(Vector3, trans),
@@ -135,16 +140,15 @@ class MultiRobotEnv(habitat.Env, Node):
             actions = {}
             current_time = self.get_clock().now()
             for i in self.agent_ids:
-                if current_time - self.t_last_cmd_vel[i] > 1 / self.required_freq:
+                if current_time - self.t_last_cmd_vel[i] > \
+                    Duration(seconds =1 / self.required_freq):
                     continue
                 actions[i] = self.action_id
             if actions:
-                self.step(actions)
+                self.sim.step(actions)
         if self.count % self.action_per_sen == 0:
             # publish the collected observations
-            # obs = [self.get_observation_of(i) for i in range(len(self.agent_ids))]
             for i in self.agent_ids:
-                # self.publish_obs(i, obs[i], current_time)
                 self.publish_obs(i, current_time)
         self.count += 1
 
@@ -165,45 +169,44 @@ class MultiRobotEnv(habitat.Env, Node):
         camera_info_msg.width = width
         camera_info_msg.height = height
         camera_info_msg.distortion_model = "plumb_bob"
-        camera_info_msg.k = np.float32([fx, 0, cx, 0, fy, cy, 0, 0, 1])
-        camera_info_msg.d = np.float32([0, 0, 0, 0, 0])
-        camera_info_msg.p = [fx, 0, cx, 0, 0, fy, cy, 0, 0, 0, 1, 0]
+        camera_info_msg.k = np.float64([fx, 0, cx, 0, fy, cy, 0, 0, 1])
+        camera_info_msg.d = [0., 0., 0., 0., 0.]
+        camera_info_msg.p = np.float64([fx, 0, cx, 0, 0, fy, cy, 0, 0, 0, 1, 0])
         return camera_info_msg
 
     def publish_obs(self, agent_id, current_time) -> None:
         '''
         Get observation from the simulator and publish.
         '''
-        obs = self.get_observation_of(agent_id)
-
+        obs = self.sim.get_sensor_observations(agent_id)
         ns = self.multi_ns[agent_id]
         # shape = obs['depth'].shape
-        image = np.array(obs['rgb'])
         # Publish ground truth tf of each robot
-        trans, quat, euler = get_agent_position(self, agent_id)
+        trans, quat, euler = get_agent_position(self.sim, agent_id)
         trans += self.pos_offset
         self.broadcast_tf(current_time, 'map', f'{ns}', trans, quat)
         self.broadcast_tf(current_time, 'map', f'{ns}/odom', trans, quat)
         
-        _depth= np.squeeze(obs['depth'], axis=2)
+        depth= np.array(obs['depth'])
         # Fix empty holes 
-        zero_mask = _depth == 0.
-        _depth[zero_mask] = 10.
+        zero_mask = depth == 0.
+        depth[zero_mask] = 10.
         # move_up = np.vstack([zero_mask[1:], [zero_mask[0]]])
         # move_down = np.vstack([[zero_mask[-1]], zero_mask[:-1]])
-        _depth = self.bridge.cv2_to_imgmsg(
-            _depth.astype(np.float32), encoding="passthrough"
+        depth = self.bridge.cv2_to_imgmsg(
+            depth.astype(np.float32), encoding="passthrough"
         )
-        _depth.header.stamp = current_time
-        _depth.header.frame_id = f"{ns}/camera"
-        self.pubs[ns]['depth'].publish(_depth)
+        depth.header.stamp = current_time.to_msg()
+        depth.header.frame_id = f"{ns}/camera"
+        self.pubs[ns]['depth'].publish(depth)
         # check = self.bridge.imgmsg_to_cv2(_depth)
 
-        _image = self.bridge.cv2_to_imgmsg(image)
-        _image.header = _depth.header
-        self.pubs[ns]['image'].publish(_image)
+        image = np.array(obs['rgb'])
+        image = self.bridge.cv2_to_imgmsg(image)
+        image.header = depth.header
+        self.pubs[ns]['image'].publish(image)
 
-        camera_info = self.make_depth_camera_info_msg(_depth.header, _depth.height, _depth.width)
+        camera_info = self.make_depth_camera_info_msg(depth.header, depth.height, depth.width)
         self.pubs[ns]['camera_info'].publish(camera_info)
 
         if self.last_position[agent_id] is None:
@@ -211,7 +214,7 @@ class MultiRobotEnv(habitat.Env, Node):
             self.last_euler[agent_id] = euler
 
         odom = Odometry()
-        odom.header.stamp = current_time
+        odom.header.stamp = current_time.to_msg()
         odom.header.frame_id = "map"
         odom.child_frame_id = f"{ns}/odom"
         odom.pose.pose = Pose(
@@ -243,7 +246,7 @@ class MultiRobotEnv(habitat.Env, Node):
         
 
 class Robot(Node):
-    def __init__(self, env:MultiRobotEnv,idx) -> None:
+    def __init__(self, env: MultiRobotEnv, idx) -> None:
         # x, y, w: initial translation and yaw
         # habitat config
         agent_name = env.agent_names[idx]
@@ -251,18 +254,20 @@ class Robot(Node):
         Node.__init__(self, node_name=agent_name,
                       allow_undeclared_parameters=True,
                       automatically_declare_parameters_from_overrides=True)
+        sim = env.sim
         self.env = env
+        self.sim = sim
         self.agent_name = agent_name
         self.agent_id = idx
         self.action_id = 0
         self.action_freq = env.action_freq
 
-        # start_pos = env._sim.sample_navigable_point()
-        start_pos = env._sim.pathfinder.get_random_navigable_point()
+        # start_pos = sim._sim.sample_navigable_point()
+        start_pos = sim.pathfinder.get_random_navigable_point()
         start_yaw = np.random.uniform(0, 2 * np.pi)
-        set_initial_position(self.env, self.agent_name, start_pos, [0, 0, start_yaw])
+        set_initial_position(self.sim, self.agent_name, start_pos, [0, 0, start_yaw])
 
-        set_action_space(self.env, self.agent_id)
+        set_action_space(self.sim, self.agent_id)
         # ROS config
         self.idx = idx
         self.ns = ns
@@ -280,20 +285,19 @@ class Robot(Node):
         _z = pose.orientation.z
         _w = pose.orientation.w
         quat = np.array([_x, _y, _z, _w])
-        set_initial_position(self.env, self.agent_name, trans, quat)
+        set_initial_position(self.sim, self.agent_name, trans, quat)
 
     def recv_vel(self, cmd_vel: Twist):
-        if not isinstance(cmd_vel.linear, list):
-            l = cmd_vel.linear
-            cmd_vel.linear = [l.x, l.y, l.z]
-        if not isinstance(cmd_vel.angular, list):
-            a = cmd_vel.angular
-            cmd_vel.angular = [a.x, a.y, a.z]
+        linear = cmd_vel.linear
+        angular = cmd_vel.angular
+        if isinstance(linear, Vector3):
+            linear = np.array([linear.x, linear.y, linear.z])
+        if isinstance(angular, Vector3):
+            angular = np.array([angular.x, angular.y, angular.z])
 
-        linear_frac = [l / self.action_freq for l in cmd_vel.linear]
-        angular_frac = [a /self.action_freq for a in cmd_vel.angular]
-        move_frac = construct(Twist, [construct(Vector3, linear_frac), construct(Vector3, angular_frac)])
-        set_twist(self.env, self.agent_id, self.action_id, move_frac)
+        linear_frac = linear / self.action_freq
+        angular_frac = angular / self.action_freq
+        set_twist(self.sim, self.agent_id, self.action_id, linear_frac, angular_frac)
 
         self.env.kick(self.agent_id)
 
@@ -303,12 +307,11 @@ def main(args=None):
     executor = MultiThreadedExecutor()
     menv = MultiRobotEnv()
     executor.add_node(menv)
-    menv.reset()
     agent_ids = menv.agent_ids
 
     # Register robot handler to menv
     for i in agent_ids:
-        executor.add_node(Robot(menv, idx=i))
+        executor.add_node(Robot(menv.sim, idx=i))
     try:
         menv.get_logger().info('Environment creation successful. Shut down with CTRL-C')
         executor.spin()
@@ -324,7 +327,6 @@ def test(args=None):
     # Testing for step by step debugging
     rclpy.init(args=args)
     menv = MultiRobotEnv()
-    menv.reset()
     agent_ids = menv.agent_ids
 
     # Register robot handler to menv
@@ -332,7 +334,7 @@ def test(args=None):
     for i in agent_ids:
         robots.append(Robot(menv, idx=i))
     v_trans = np.array([0.5, 0., 0.])
-    v_rot = np.array([0., 0., 0., 0.])
+    v_rot = np.array([0., 0., 0.])
     twist = Twist(
             linear=construct(Vector3, v_trans),
             angular=construct(Vector3, v_rot))

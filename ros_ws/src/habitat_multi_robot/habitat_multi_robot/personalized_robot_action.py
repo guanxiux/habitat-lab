@@ -82,13 +82,13 @@ if __name__ == "__main__":
         set_initial_position(env, agent_names[0], [4, 0, 0], [0, 0, 0])
         trans, _, euler = get_agent_position(env, 0)
         print(f'Step 0: Agent0 trans {trans} euler {euler}')
-        set_twist(env, 0, 0, Twist([0.2, 0, 0], [0, 0, 0]))
+        set_twist(env, 0, 0, [0.2, 0, 0], [0, 0, 0])
         for i in range(5):
             env.step({0: 0})
             trans, _, euler = get_agent_position(env, 0)
             print(f'Step {i}: Agent0 trans {trans} euler {euler}')
         yaw = np.pi/4
-        set_twist(env, 0, 0, Twist([0, 0, 0], [0, 0, yaw]))
+        set_twist(env, 0, 0, [0, 0, 0], [0, 0, yaw])
         current_euler = 0
         for i in range(8):
             env.step({0: 0})
@@ -96,7 +96,7 @@ if __name__ == "__main__":
             trans, _, euler = get_agent_position(env, 0)
             close = np.allclose(quaternion_from_euler(*euler), quaternion_from_euler(0,0,current_euler), atol=1e-4) or np.allclose(-1*quaternion_from_euler(*euler), quaternion_from_euler(0,0,current_euler), atol=1e-4)
             print(f'Step {i+5}: Agent0 euler {euler} true euler {current_euler} close {close}')
-        set_twist(env, 0, 0, Twist([0., 0.2, 0], [0, 0, -np.pi/4]), noise=0.05)
+        set_twist(env, 0, 0, [0., 0.2, 0], [0, 0, -np.pi/4], noise=0.05)
         for i in range(5):
             env.step({0: 0})
             current_euler += -yaw
