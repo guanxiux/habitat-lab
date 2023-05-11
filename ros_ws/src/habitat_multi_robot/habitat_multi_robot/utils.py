@@ -11,7 +11,7 @@ from habitat.sims.habitat_simulator.actions import (
 )
 from habitat.utils.geometry_utils import quaternion_to_list
 
-from . import personalized_robot_action
+import personalized_robot_action
 
 pi_2 = quaternion_from_euler(0,0, math.pi)
 
