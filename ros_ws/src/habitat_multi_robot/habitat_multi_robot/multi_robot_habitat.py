@@ -2,14 +2,13 @@
 import json
 import time
 from threading import Lock
+import asyncio
+import pickle
 import argparse
 import copy
 import numpy as np
 from rclpy.time import Time
-from rclpy.node import Node
-from rclpy.duration import Duration
 from tf_transformations import quaternion_from_euler
-from tf2_ros import TransformBroadcaster
 from cv_bridge import CvBridge
 
 from geometry_msgs.msg import Twist, Pose, Point, Quaternion,\
@@ -23,9 +22,8 @@ from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
 
 from utils import construct, set_initial_position,\
     set_action_space, get_agent_position, set_twist, register_my_actions
+from ros_interface import ADDR, PORT
 
-def transform_rgb_bgr(image):
-    return image[:, :, [2, 1, 0]]
 
 DEFAULT_DATASET_JSON = '{"episodes": [{"episode_id": "0", "scene_id": "/habitat-lab/data/Replica/apartment_0/mesh.ply", "start_position": [0, 0, 0], "start_rotation": [0, 0, 0, 1], "info": {"geodesic_distance": 6.335183143615723, "difficulty": "easy"}, "goals": [{"position": [2.2896811962127686, 0.11950381100177765, 16.97636604309082], "radius": null}], "shortest_paths": null, "start_room": null}]}'
 
@@ -122,31 +120,110 @@ class MultiRobotEnv:
         for robot in self.robots:
             self.all_subs.extend(robot.subs_cb)
 
-    def kick(self, agent_id, ts: Time):
-        with self.lock:
-            self.t_last_cmd_vel[agent_id] = ts
+    def generate_pub_msg(self, ts: float):
+        pub_msgs = {'req_type': 'pub', 'pubs': []}
+        for robot in self.robots:
+            _msgs = robot.publish_obs(Time(seconds=ts), self.sense_freq)
+            pub_msgs["pubs"].extend(_msgs)
+        encoded = pickle.dumps(pub_msgs)
+        size_msg = len(encoded).to_bytes(4, byteorder='big')
+        return size_msg + encoded
 
-    def execute_action(self):
-        with self.lock:
-            actions = {}
-            current_time = Time(seconds=time.time())
-            sub_msgs = {}
+    def generate_sub_msg(self):
+        sub_msgs = {'req_type': 'sub', 'subs': []}
+        for robot in self.robots:
+            sub_msgs["subs"].extend(robot.subs_info)
+        encoded = pickle.dumps(sub_msgs)
+        size_msg = len(encoded).to_bytes(4, byteorder='big')
+        return size_msg + encoded
+
+    async def publish_all(self, _, writer, freq):
+        period = 1. / freq
+        while True:
+            stime = time.time()
+            data = self.generate_pub_msg(stime)
+            writer.write(data)
+            await writer.drain()
+            restime = period - (time.time() - stime)
+            if restime > 0.:
+                await asyncio.sleep(restime)
+            elif restime < 0.:
+                print(f"Publishing observations is missing \
+                    desired frequency of {self.sense_freq}")
+
+    async def subscribe_all(self, reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter, freq):
+        period = 1. / freq
+        while True:
+            stime = time.time()
+            data = self.generate_sub_msg()
+            writer.write(data)
+            await writer.drain()
+
+            msize = int.from_bytes(await reader.readexactly(4),
+                                   byteorder='big')
+            sub_msgs = pickle.loads(await reader.readexactly(msize))
             for key, item in sub_msgs.items():
                 assert key in self.all_subs, f"Topic name: {key} unregistered in robots"
                 # calling callback func
                 self.all_subs[key](item)
+
+            restime = period - (time.time() - stime)
+            if restime > 0.:
+                await asyncio.sleep(restime)
+            elif restime < 0.:
+                print(f"Subscribing commands is missing \
+                    desired frequency of {self.sense_freq}")
+
+    async def start_client(self, freq, _type='pub'):
+        while True:
+            try:
+                reader, writer = await asyncio.open_connection(
+                    ADDR, PORT)
+                if _type == 'pub':
+                    await self.publish_all(reader, writer, freq)
+                elif _type == 'sub':
+                    await self.subscribe_all(reader, writer, freq)
+                else:
+                    raise NotImplementedError
+            except ConnectionResetError:
+                print("Connection reset. Trying to reconnect in 5 seconds.")
+                await asyncio.sleep(5)
+                continue
+            except (KeyboardInterrupt, SystemExit):
+                print("Closing connection.")
+                writer.close()
+                await writer.wait_closed()
+                asyncio.get_running_loop().stop()
+                break
+
+    async def execute_action(self, freq):
+        period = 1. / freq
+        required_period = 1. / self.required_freq
+        while True:
+            stime = time.time()
+            actions = {}
             for i, robot in enumerate(self.robots):
-                if robot.vel_cmd_is_stale(1. / self.required_freq):
+                if robot.vel_cmd_is_stale(required_period):
                     continue
                 actions[i] = self.action_id
             if actions:
                 self.sim.step(actions)
-        if self.count % self.action_per_sen == 0:
-            pub_msgs = []
-            for robot in self.robots:
-                _msgs = robot.publish_obs(current_time, self.sense_freq)
-                pub_msgs.extend(_msgs)
-        self.count += 1
+            restime = period - (time.time() - stime)
+            if restime > 0:
+                await asyncio.sleep(restime)
+            elif restime < 0:
+                print(f"Executing Action is missing desired frequency {freq}")
+
+    def launch_all(self):
+        loop = asyncio.get_event_loop()
+        futures = [
+            self.start_client(freq=self.sense_freq, _type="pub"),   # pub obs
+            self.start_client(freq=self.action_freq, _type="sub"),  # sub cmd
+            self.execute_action(self.action_freq)                   # exec action
+        ]
+        result = loop.run_forever(asyncio.gather(*futures))
+        print(result)
 
 
 class Robot:
@@ -277,63 +354,17 @@ class Robot:
         return msgs
 
 
-def main(args=None):
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--number_of_robots", type=int, default=1)
     parser.add_argument("--action_frequency", type=float, default=30)
     parser.add_argument("--sense_frequency", type=float, default=10)
     parser.add_argument("--required_frequency", type=float, default=1, help="Required\
-        frequency of action control. Action control older that 1/required_frequency \
+        frequency of action control. Action control older that 1/required_frequency s \
             will be ignored")
     parser.add_argument("--habitat_config_path", type=str, default="/habitat-lab/configs/ours/MASLAM_apartment_three_robots.yaml")
     parser.add_argument("--habitat_scene_id", type=str, default="/habitat-lab/data/Replica/apartment_1.glb")
     args = parser.parse_args()
-    
+    main(args=args)
     menv = MultiRobotEnv(args=args)
-    agent_ids = menv.agent_ids
-
-    # Register robot handler to menv
-    for i in agent_ids:
-        executor.add_node(Robot(menv, idx=i))
-    try:
-        menv.get_logger().info('Environment creation successful. Shut down with CTRL-C')
-        executor.spin()
-    except KeyboardInterrupt:
-        menv.get_logger().info('Keyboard interrupt, shutting down.\n')
-    for node in executor.get_nodes():
-        node.destroy_node()
-    # rclpy.spin()
-    rclpy.shutdown()
-
-
-def test(args=None):
-    # Testing for step by step debugging
-    rclpy.init(args=args)
-    menv = MultiRobotEnv()
-    agent_ids = menv.agent_ids
-
-    # Register robot handler to menv
-    robots = []
-    for i in agent_ids:
-        robots.append(Robot(menv, idx=i))
-    v_trans = np.array([0.5, 0., 0.])
-    v_rot = np.array([0., 0., 0.])
-    twist = Twist(
-            linear=construct(Vector3, v_trans),
-            angular=construct(Vector3, v_rot))
-    robots[0].recv_vel(twist)
-    menv.execute_action()
-    trans, euler = menv.publish_obs(0, menv.get_clock().now())
-    for _ in range(10):
-        robots[0].recv_vel(twist)
-        menv.execute_action()
-        _trans, _euler = menv.publish_obs(0, menv.get_clock().now())
-        print(f"Speed trans: {np.round((_trans - trans) * menv.action_freq, decimals=2)}, rot: {np.round((_euler - euler)*menv.action_freq, decimals=2)}.")
-
-    for node in robots:
-        node.destroy_node()
-    menv.destroy_node()
-    rclpy.shutdown()
-
-if __name__ == "__main__":
-    test()
+    menv.launch_all()

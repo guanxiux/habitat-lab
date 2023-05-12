@@ -41,51 +41,59 @@ class RosHabitatInterface(Node):
         self.server_thread.start()
 
     async def handle_req(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        size_msg = await reader.read(4)
-        m_size = int.from_bytes(size_msg, byteorder='big')
-        data_msg = await reader.readexactly(m_size)
+        try:
+            while True:
+                size_msg = await reader.readexactly(4)
+                m_size = int.from_bytes(size_msg, byteorder='big')
+                data_msg = await reader.readexactly(m_size)
+                data: dict = pickle.loads(data_msg)
+                req_type = data['req_type']
+                addr = writer.get_extra_info('peername')
+                self.get_logger().debug(
+                    f"{req_type} Received data of {len(data_msg)} bytes from {addr!r}")
 
-        data: dict = pickle.loads(data_msg)
-        req_type = data['req_type']
-        addr = writer.get_extra_info('peername')
-        self.get_logger().debug(f"{req_type} Received data of {len(data_msg)} bytes from {addr!r}")
+                if req_type == 'pub':
+                    for pub in data['pubs']:
+                        _type, name, msg, qos = pub
+                        if name not in self.pubs:
+                            self.pubs[name] = self.create_publisher(
+                                _type, name, qos)
+                        self.pubs[name].publish(msg)
+                elif req_type == 'sub':
+                    for sub in data['subs']:
+                        _type, name, qos = sub
+                        if name not in self.subs:
+                            func = partial(self.store_sub_msg, name=name)
+                            self.subs[name] = self.create_subscription(
+                                _type, name, func, qos)
+                    write_data = pickle.dumps(self.subs_msg_store)
+                    size_msg = len(write_data).to_bytes(4, byteorder='big')
+                    writer.write(size_msg + write_data)
+                    self.get_logger().debug(
+                        f"{req_type} Wrote data of {len(write_data)} bytes to {addr!r}")
 
-        if req_type == 'pub':
-            for pub in data['pubs']:
-                _type, name, msg, qos = pub
-                if name not in self.pubs:
-                    self.pubs[name] = self.create_publisher(
-                        _type, name, qos)
-                self.pubs[name].publish(msg)
-        elif req_type == 'sub':
-            for sub in data['subs']:
-                _type, name, qos = sub
-                if name not in self.subs:
-                    func = partial(self.store_sub_msg, name=name)
-                    self.subs[name] = self.create_subscription(
-                        _type, name, func, qos)
-            write_data = pickle.dumps(self.subs_msg_store)
-            size_msg = len(write_data).to_bytes(4, byteorder='big')
-            writer.write(size_msg + write_data)
+                    await writer.drain()
+        except KeyboardInterrupt:
+            addr = writer.get_extra_info('peername')
             self.get_logger().debug(
-                f"{req_type} Wrote data of {len(write_data)} bytes to {addr!r}")
-
-            await writer.drain()
+                f"Closing connection to {addr!r}.")
             writer.close()
             await writer.wait_closed()
 
     def store_sub_msg(self, msg, name):
         self.subs_msg_store[name] = msg
 
-    async def start_server(self):
-        server = await asyncio.start_server(
-            self.handle_req, ADDR, PORT)
+    def start_server(self):
+        async def _start_server():
+            server = await asyncio.start_server(
+                self.handle_req, ADDR, PORT)
 
-        addrs = ', '.join(str(sock.getsockname()) for sock in server.sockets)
-        self.get_logger().info(f'Serving on {addrs}')
+            addrs = ', '.join(str(sock.getsockname()) for sock in server.sockets)
+            self.get_logger().info(f'Serving on {addrs}')
 
-        async with server:
-            await server.serve_forever()
+            async with server:
+                await server.serve_forever()
+        asyncio.run(_start_server)
 
 
 def main(args=None):
