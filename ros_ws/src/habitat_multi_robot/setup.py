@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'transforms3d', 'habitat'],
+    install_requires=['setuptools'],
     zip_safe=True,
     maintainer='root',
     maintainer_email='guanxx@connect.hku.hk',
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'multi_robot_habitat = habitat_multi_robot.Robot:main',
+            'multi_robot_habitat = habitat_multi_robot.multi_robot_habitat:main',
         ],
     },
 )
