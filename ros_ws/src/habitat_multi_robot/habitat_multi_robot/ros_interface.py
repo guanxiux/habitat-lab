@@ -135,5 +135,10 @@ def main(args=None):
         ros_interface.destroy_node()
         habitat.kill()
 
+def test(args=None):
+    rclpy.init(args=args)
+    ros_interface = RosHabitatInterface()
+    
+
 if __name__ == "__main__":
     main()

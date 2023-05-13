@@ -72,7 +72,7 @@ class NoisyMoveAndRotate(habitat_sim.SceneNodeControl):
 
 
 if __name__ == "__main__":
-    from .utils import *
+    from utils import *
     config = habitat.get_config(config_paths="configs/tasks/pointnav.yaml")
     agent_names = config.SIMULATOR.AGENTS
     config.freeze()
