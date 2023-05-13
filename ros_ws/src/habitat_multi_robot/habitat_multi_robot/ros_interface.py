@@ -137,8 +137,7 @@ def main(args=None):
 
 def test(args=None):
     rclpy.init(args=args)
-    ros_interface = RosHabitatInterface()
-    
+    RosHabitatInterface()
 
 if __name__ == "__main__":
-    main()
+    test()
