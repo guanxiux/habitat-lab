@@ -12,7 +12,6 @@ from sensor_msgs.msg import Image, CameraInfo
 
 from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 
-from multi_robot_habitat import MultiRobotEnv
 from utils.utils import construct, set_initial_position,\
     set_action_space, get_agent_position, set_twist
 
@@ -66,7 +65,7 @@ class Robot:
     '''
     Robot instance that publishes observation and subscribes to velocity commands.
     '''
-    def __init__(self, env: MultiRobotEnv, idx) -> None:
+    def __init__(self, env, idx) -> None:
         # x, y, w: initial translation and yaw
         # habitat config
         agent_name = env.agent_names[idx]
