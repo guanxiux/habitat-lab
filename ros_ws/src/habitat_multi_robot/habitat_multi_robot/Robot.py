@@ -79,7 +79,7 @@ class Robot:
         self.action_freq = env.action_freq
         self.last_position = None
         self.last_euler = None
-        self.time_last_vel_cmd = Time(seconds=time.time())
+        self.time_last_vel_cmd = time.time()
 
         start_pos = self.sim.sample_navigable_point()
         start_yaw = np.random.uniform(0, 2 * np.pi)

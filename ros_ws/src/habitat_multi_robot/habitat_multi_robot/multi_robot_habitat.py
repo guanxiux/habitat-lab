@@ -169,7 +169,7 @@ class MultiRobotEnv:
             self.start_client(freq=self.action_freq, _type="sub"),  # sub cmd
             self.execute_action(self.action_freq)                   # exec action
         ]
-        result = loop.run_forever(asyncio.gather(*futures))
+        result = loop.run_until_complete(asyncio.wait(futures))
         print(result)
 
 
