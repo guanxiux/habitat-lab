@@ -122,10 +122,19 @@ def main(args=None):
     assert num_robots <= 3, "We currently only support up to three robots."
     assert required_freq < action_freq
     assert sense_freq <= action_freq
-    ros_interface.get_logger().info(f"Number of robots: {num_robots}; action frequency: {action_freq}Hz; sample frequency: {sense_freq}Hz; required frequency: {required_freq}Hz; config path: {config_path}; scene_id: {scene_id}")
+    ros_interface.get_logger().info(
+        f"""Number of robots: {num_robots};
+        action frequency: {action_freq}Hz;
+        sample frequency: {sense_freq}Hz;
+        required frequency: {required_freq}Hz;
+        config path: {config_path};
+        scene_id: {scene_id}""")
 
-    cmd = f"python /habitat-lab/ros_ws/src/habitat_multi_robot/habitat_multi_robot/multi_robot_habitat.py --number_of_robots {num_robots} --action_frequency {action_freq} --sense_frequency {sense_freq} --required_frequency {required_freq} --habitat_config_path {config_path} --habitat_scene_id {scene_id}"
-    habitat = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+    cmd = f"""
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate habitat 
+    python /habitat-lab/ros_ws/src/habitat_multi_robot/habitat_multi_robot/multi_robot_habitat.py --number_of_robots {num_robots} --action_frequency {action_freq} --sense_frequency {sense_freq} --required_frequency {required_freq} --habitat_config_path {config_path} --habitat_scene_id {scene_id}"""
+    habitat = subprocess.Popen(cmd, shell=True, executable='/bin/bash', stdout=subprocess.PIPE)
     ros_interface.get_logger().info(f"Executing {cmd}")
     try:
         rclpy.spin(ros_interface)
