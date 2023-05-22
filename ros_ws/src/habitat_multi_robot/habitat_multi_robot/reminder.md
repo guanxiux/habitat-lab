@@ -1,0 +1,1 @@
+ros2 run turtlesim turtle_teleop_key --ros-args -r /turtle1/cmd_vel:=/robot0/cmd_vel

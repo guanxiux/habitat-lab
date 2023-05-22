@@ -6,7 +6,10 @@ import threading
 import shlex
 import subprocess
 import rclpy
+import time
 from rclpy.node import Node
+
+from rclpy.logging import LoggingSeverity
 
 
 def get_unused_port():
@@ -21,18 +24,19 @@ ADDR = '127.0.0.1'
 PORT = 63412
 
 class RosHabitatInterface(Node):
-    def __init__(self, name="habita_ros_interface") -> None:
+    def __init__(self, logging_level=LoggingSeverity.INFO, name="habitat_ros_interface") -> None:
         Node.__init__(self, node_name=name)
+        self.get_logger().set_level(logging_level)
         self.pubs = {}
         self.subs = {}
         self.subs_msg_store = {}
-        self.get_logger().info("Creating ROS habita interface.")
-        self.server_thread = threading.Thread(target=self.start_server, name="server")
+        self.get_logger().info("Creating ROS habitat interface.")
+        self.server_thread = threading.Thread(target=self.start_server, name="server", daemon=True)
 
-        self.declare_parameter("/number_of_robots", 3.)
-        self.declare_parameter("/action_frequency", 30.)
+        self.declare_parameter("/number_of_robots", 3)
+        self.declare_parameter("/action_frequency", 10.)
         self.declare_parameter("/sense_frequency", 10.)
-        self.declare_parameter("/required_frequency", 0.1)
+        self.declare_parameter("/required_frequency", 5.)
         self.declare_parameter("/habitat_config_path",
             "/habitat-lab/configs/ours/MASLAM_apartment_three_robots.yaml")
         self.declare_parameter("/habitat_scene_id",
@@ -67,6 +71,7 @@ class RosHabitatInterface(Node):
                             self.subs[name] = self.create_subscription(
                                 _type, name, func, qos)
                     write_data = pickle.dumps(self.subs_msg_store)
+                    self.subs_msg_store = {}
                     size_msg = len(write_data).to_bytes(4, byteorder='big')
                     writer.write(size_msg + write_data)
                     self.get_logger().debug(
@@ -83,6 +88,7 @@ class RosHabitatInterface(Node):
     def store_sub_msg(self, msg, name):
         self.subs_msg_store[name] = msg
 
+
     def start_server(self):
         async def _start_server():
             server = await asyncio.start_server(
@@ -93,7 +99,7 @@ class RosHabitatInterface(Node):
 
             async with server:
                 await server.serve_forever()
-        asyncio.run(_start_server)
+        asyncio.run(_start_server())
 
 
 def main(args=None):
@@ -101,7 +107,7 @@ def main(args=None):
     ros_interface = RosHabitatInterface()
 
     num_robots = ros_interface.get_parameter(
-        "/number_of_robots").get_parameter_value().double_value
+        "/number_of_robots").get_parameter_value().integer_value
     action_freq = ros_interface.get_parameter(
         "/action_frequency").get_parameter_value().double_value
     sense_freq = ros_interface.get_parameter(
@@ -116,28 +122,28 @@ def main(args=None):
     assert num_robots <= 3, "We currently only support up to three robots."
     assert required_freq < action_freq
     assert sense_freq <= action_freq
-    ros_interface.get_logger().info(f"Number of robots: {num_robots}; \
-        action frequency: {action_freq}Hz; sample frequency: {sense_freq}Hz; \
-            required frequency: {required_freq}Hz; config path: {config_path}; \
-                scene_id: {scene_id}")
+    ros_interface.get_logger().info(f"Number of robots: {num_robots}; action frequency: {action_freq}Hz; sample frequency: {sense_freq}Hz; required frequency: {required_freq}Hz; config path: {config_path}; scene_id: {scene_id}")
 
-    cmd = f"/bin/bash -c conda activate habitat && python /habitat-lab/ros_ws/\
-        src/habitat_multi_robot/habitat_multi_robot/multi_robot_habitat.py \
-            --number_of_robots {num_robots} --action_frequency {action_freq} \
-                -- sense_frequency {sense_freq} --required_frequency {required_freq} \
-                    --habitat_config_path {config_path} --habitat_scene_id {scene_id}"
-    habitat = subprocess.Popen(shlex.split(cmd), shell=True, stdout=subprocess.PIPE)
+    cmd = f"python /habitat-lab/ros_ws/src/habitat_multi_robot/habitat_multi_robot/multi_robot_habitat.py --number_of_robots {num_robots} --action_frequency {action_freq} --sense_frequency {sense_freq} --required_frequency {required_freq} --habitat_config_path {config_path} --habitat_scene_id {scene_id}"
+    habitat = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
     ros_interface.get_logger().info(f"Executing {cmd}")
     try:
         rclpy.spin(ros_interface)
     except KeyboardInterrupt:
         ros_interface.get_logger().info("Shutting down everything")
-        ros_interface.destroy_node()
         habitat.kill()
+        ros_interface.get_logger().info(habitat.communicate()[0])
+        ros_interface.destroy_node()
 
 def test(args=None):
     rclpy.init(args=args)
-    RosHabitatInterface()
+    ros_interface = RosHabitatInterface(logging_level=LoggingSeverity.DEBUG)
+    
+    try:
+        rclpy.spin(ros_interface)
+    except KeyboardInterrupt:
+        ros_interface.get_logger().info("Shutting down everything")
+        ros_interface.destroy_node()
 
 if __name__ == "__main__":
     test()

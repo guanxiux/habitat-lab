@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'multi_robot_habitat = habitat_multi_robot.multi_robot_habitat:main',
+            'multi_robot_habitat = habitat_multi_robot.ros_interface:main',
         ],
     },
 )

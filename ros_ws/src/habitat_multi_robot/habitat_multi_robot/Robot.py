@@ -16,10 +16,10 @@ from utils.utils import construct, set_initial_position,\
     set_action_space, get_agent_position, set_twist
 
 
-def fake_publish(publisher_info, msg, pub_msg_list: list):
-    publish_msg = copy.copy(publisher_info)
+def fake_publish(publisher_info, msg, msg_list: list):
+    publish_msg = copy.deepcopy(publisher_info)
     publish_msg[-2] = msg
-    pub_msg_list.append(publish_msg)
+    msg_list.append(publish_msg)
 
 def fake_br_tf(current_time, base, target, trans=None, rot=None, msg_list=None):
     if trans is None:
@@ -37,7 +37,7 @@ def fake_br_tf(current_time, base, target, trans=None, rot=None, msg_list=None):
     transform.transform = Transform(
         translation=construct(Vector3, trans),
         rotation=construct(Quaternion, quat))
-    msg_list.append([TransformStamped, '/tf', transform, 1])
+    msg_list.append([TransformStamped, '/tf', transform, 10])
 
 def make_depth_camera_info_msg(header, height, width):
     r"""
@@ -93,15 +93,15 @@ class Robot:
         self.bridge = CvBridge()
         
         self.pubs = {
-            'depth': [Image, f"{ns}/camera/depth/image_raw", None, 1],
-            'image': [Image, f"{ns}/camera/rgb/image_raw", None, 1],
-            'camera_info': [CameraInfo, f"{ns}/camera/camera_info", None, 1],
-            'odom': [Odometry, f"{ns}/odom", None, 1],
-            'tf': [TransformStamped, '/tf', None, 1]
+            'depth': [Image, f"{ns}/camera/depth/image_raw", None, 10],
+            'image': [Image, f"{ns}/camera/rgb/image_raw", None, 10],
+            'camera_info': [CameraInfo, f"{ns}/camera/camera_info", None, 10],
+            'odom': [Odometry, f"{ns}/odom", None, 10],
+            'tf': [TransformStamped, '/tf', None, 10]
         }
         self.subs_info = [
-            [Twist, f"{ns}/cmd_vel", self.recv_vel, 1],
-            [Pose, f"{ns}/pose",  self.recv_pose, 1]
+            [Twist, f"{ns}/cmd_vel", 1],
+            [Pose, f"{ns}/pose", 1]
         ]
         self.subs_cb = {
             f"{ns}/cmd_vel": self.recv_vel,
@@ -149,9 +149,6 @@ class Robot:
         fake_br_tf(current_time, 'map', f'{ns}/odom', trans, quat, msgs)
 
         depth= np.array(obs['depth'])
-        # Fix empty holes 
-        # zero_mask = depth == 0.
-        # depth[zero_mask] = 10.
         depth = self.bridge.cv2_to_imgmsg(
             depth.astype(np.float32), encoding="passthrough"
         )
@@ -185,7 +182,7 @@ class Robot:
         v_rot = (euler - self.last_euler) * sense_freq
         odom.twist.twist = Twist(
             linear=construct(Vector3, v_trans), angular=construct(Vector3, v_rot))
-        fake_publish(self.pubs[ns]['odom'], odom, msgs)
+        fake_publish(self.pubs['odom'], odom, msgs)
 
         self.last_position = trans
         self.last_euler = euler

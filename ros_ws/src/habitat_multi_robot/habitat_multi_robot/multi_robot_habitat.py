@@ -32,6 +32,8 @@ class MultiRobotEnv:
         config_path = args.habitat_config_path
         scene_id = args.habitat_scene_id
 
+        print(f"Number of robots: {num_robots}; action frequency: {action_freq}Hz; sample frequency: {sense_freq}Hz; required frequency: {required_freq}Hz; config path: {config_path}; scene_id: {scene_id}")
+
         config = habitat.get_config(config_paths=config_path)
         config.defrost()
         config.SIMULATOR.SCENE = scene_id
@@ -63,9 +65,9 @@ class MultiRobotEnv:
         self.pos_offset = np.array(pose_offset)
 
         self.robots = [Robot(self, idx) for idx in agent_ids]
-        self.all_subs = []
+        self.all_subs = {}
         for robot in self.robots:
-            self.all_subs.extend(robot.subs_cb)
+            self.all_subs.update(robot.subs_cb)
 
     def generate_pub_msg(self, ts: float):
         pub_msgs = {'req_type': 'pub', 'pubs': []}
@@ -91,12 +93,12 @@ class MultiRobotEnv:
             data = self.generate_pub_msg(stime)
             writer.write(data)
             await writer.drain()
+            # print(f"Sending {len(data)} bytes.")
             restime = period - (time.time() - stime)
             if restime > 0.:
                 await asyncio.sleep(restime)
             elif restime < 0.:
-                print(f"Publishing observations is missing \
-                    desired frequency of {self.sense_freq}")
+                print(f"Publishing observations is missing desired frequency of {self.sense_freq}")
 
     async def subscribe_all(self, reader: asyncio.StreamReader,
                       writer: asyncio.StreamWriter, freq):
@@ -109,6 +111,7 @@ class MultiRobotEnv:
 
             msize = int.from_bytes(await reader.readexactly(4),
                                    byteorder='big')
+            # print(f"Receiving {msize} bytes.")
             sub_msgs = pickle.loads(await reader.readexactly(msize))
             for key, item in sub_msgs.items():
                 assert key in self.all_subs, f"Topic name: {key} unregistered in robots"
@@ -119,8 +122,7 @@ class MultiRobotEnv:
             if restime > 0.:
                 await asyncio.sleep(restime)
             elif restime < 0.:
-                print(f"Subscribing commands is missing \
-                    desired frequency of {self.sense_freq}")
+                print(f"Subscribing commands is missing desired frequency of {self.sense_freq}")
 
     async def start_client(self, freq, _type='pub'):
         while True:
@@ -143,6 +145,8 @@ class MultiRobotEnv:
                 await writer.wait_closed()
                 asyncio.get_running_loop().stop()
                 break
+            except Exception as e:
+                raise e
 
     async def execute_action(self, freq):
         period = 1. / freq
@@ -169,7 +173,8 @@ class MultiRobotEnv:
             self.start_client(freq=self.action_freq, _type="sub"),  # sub cmd
             self.execute_action(self.action_freq)                   # exec action
         ]
-        result = loop.run_until_complete(asyncio.wait(futures))
+        print("Launching all processes")
+        result = loop.run_until_complete(asyncio.gather(*futures))
         print(result)
 
 
@@ -178,9 +183,9 @@ if __name__ == "__main__":
     parser.add_argument("--number_of_robots", type=int, default=1)
     parser.add_argument("--action_frequency", type=float, default=30)
     parser.add_argument("--sense_frequency", type=float, default=10)
-    parser.add_argument("--required_frequency", type=float, default=1, help="Required\
-        frequency of action control. Action control older that 1/required_frequency s \
-            will be ignored")
+    parser.add_argument("--required_frequency", type=float, default=5, help="Required \
+frequency of action control. Action control older that 1/required_frequency second \
+will be ignored")
     parser.add_argument("--habitat_config_path", type=str, default="/habitat-lab/configs/ours/MASLAM_apartment_three_robots.yaml")
     parser.add_argument("--habitat_scene_id", type=str, default="/habitat-lab/data/Replica/apartment_1.glb")
     args = parser.parse_args()
