@@ -1,4 +1,5 @@
 # /usr/bin/env python
+import os
 import asyncio
 import pickle
 from functools import partial
@@ -20,28 +21,20 @@ def get_unused_port():
     s.close()
     return int(addr[1])
 
-ADDR = '127.0.0.1'
-PORT = 63412
-
 class RosHabitatInterface(Node):
-    def __init__(self, logging_level=LoggingSeverity.INFO, name="habitat_ros_interface") -> None:
+    def __init__(self, logging_level=LoggingSeverity.INFO,
+                 name="ros_interface",
+                 addr='127.0.0.1',
+                 port=64523) -> None:
         Node.__init__(self, node_name=name)
         self.get_logger().set_level(logging_level)
         self.pubs = {}
         self.subs = {}
         self.subs_msg_store = {}
-        self.get_logger().info("Creating ROS habitat interface.")
+        self.addr = addr
+        self.port = port
+        self.get_logger().info("Creating ROS interface.")
         self.server_thread = threading.Thread(target=self.start_server, name="server", daemon=True)
-
-        self.declare_parameter("/number_of_robots", 3)
-        self.declare_parameter("/action_frequency", 10.)
-        self.declare_parameter("/sense_frequency", 10.)
-        self.declare_parameter("/required_frequency", 5.)
-        self.declare_parameter("/habitat_config_path",
-            "/habitat-lab/configs/ours/MASLAM_apartment_three_robots.yaml")
-        self.declare_parameter("/habitat_scene_id",
-            "/habitat-lab/data/Replica/apartment_1.glb")
-
         self.server_thread.start()
 
     async def handle_req(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -92,7 +85,7 @@ class RosHabitatInterface(Node):
     def start_server(self):
         async def _start_server():
             server = await asyncio.start_server(
-                self.handle_req, ADDR, PORT)
+                self.handle_req, self.addr, self.port)
 
             addrs = ', '.join(str(sock.getsockname()) for sock in server.sockets)
             self.get_logger().info(f'Serving on {addrs}')
@@ -104,7 +97,18 @@ class RosHabitatInterface(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    ros_interface = RosHabitatInterface()
+    addr = '127.0.0.1'
+    port = get_unused_port()
+    ros_interface = RosHabitatInterface(addr=addr, port=port)
+
+    ros_interface.declare_parameter("/number_of_robots", 3)
+    ros_interface.declare_parameter("/action_frequency", 10.)
+    ros_interface.declare_parameter("/sense_frequency", 10.)
+    ros_interface.declare_parameter("/required_frequency", 5.)
+    ros_interface.declare_parameter("/habitat_config_path",
+        "/habitat-lab/configs/ours/MASLAM_apartment_three_robots.yaml")
+    ros_interface.declare_parameter("/habitat_scene_id",
+        "/habitat-lab/data/Replica/apartment_1.glb")
 
     num_robots = ros_interface.get_parameter(
         "/number_of_robots").get_parameter_value().integer_value
@@ -130,10 +134,11 @@ def main(args=None):
         config path: {config_path};
         scene_id: {scene_id}""")
 
+    dir_path = os.path.dirname(__file__)
     cmd = f"""
     . /opt/conda/etc/profile.d/conda.sh
     conda activate habitat 
-    python /habitat-lab/ros_ws/src/habitat_multi_robot/habitat_multi_robot/multi_robot_habitat.py --number_of_robots {num_robots} --action_frequency {action_freq} --sense_frequency {sense_freq} --required_frequency {required_freq} --habitat_config_path {config_path} --habitat_scene_id {scene_id}"""
+    python {dir_path}/multi_robot_habitat.py --number_of_robots {num_robots} --action_frequency {action_freq} --sense_frequency {sense_freq} --required_frequency {required_freq} --habitat_config_path {config_path} --habitat_scene_id {scene_id} --address {addr} --port {port}"""
     habitat = subprocess.Popen(cmd, shell=True, executable='/bin/bash', stdout=subprocess.PIPE)
     ros_interface.get_logger().info(f"Executing {cmd}")
     try:
